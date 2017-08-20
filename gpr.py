@@ -6,6 +6,7 @@
 from __future__ import print_function
 
 import numpy as np
+from numpy.random import uniform
 from numpy import log, pi, log10
 
 from scipy import linalg
@@ -166,7 +167,7 @@ def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
     if eval_Dx:
         pass
 
-    # convert from upper-triangular matrix to square matrix
+    # infoert from upper-triangular matrix to square matrix
     # K = squareform(K)
     # np.fill_diagonal(K, 1)
     if eval_Dtheta:
@@ -604,7 +605,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
     _optimizer_types = [
         'BFGS',
-        'fmin_cobyla']
+        'CMA']
 
     # 10. * MACHINE_EPSILON
     def __init__(self, regr='constant', corr='squared_exponential', 
@@ -618,10 +619,19 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.beta0 = beta0
         self.sigma2 = sigma2
         self.verbose = verbose
-        self.theta0 = theta0
-        self.thetaL = thetaL
-        self.thetaU = thetaU
+        
+        # hyperparameters: kernel function
+        self.theta0 = np.array(theta0).flatten()
+        self.thetaL = np.array(thetaL).flatten()
+        self.thetaU = np.array(thetaU).flatten()
+        
+        if not (np.isfinite(self.thetaL).all() and np.isfinite(self.thetaU).all()):
+            raise ValueError("all bounds are required finite.")
+        
+        # TODO: remove normalize in the future
         self.normalize = normalize
+        
+        # model optimization parameters
         self.optimizer = optimizer
         self.random_start = random_start
         self.random_state = random_state
@@ -633,13 +643,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             self.nugget_estim else False
 
         # three cases to compute the log-likelihood function
-        # TODO: verify: it seems noisy the most usefull one
+        # TODO: verify: it seems the noisy case is the most useful one
         if not self.noisy:
-            self.log_likelihood_mode = 'noiseless'
+            self.llf_mode = 'noiseless'
         elif self.nugget_estim:
-            self.log_likelihood_mode = 'nugget_estim'
+            self.llf_mode = 'nugget_estim'
         else:
-            self.log_likelihood_mode = 'noisy'
+            self.llf_mode = 'noisy'
 
     def _process_data(self, X, y):
         # Force data to 2D numpy.array
@@ -728,7 +738,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             predictions.
         """
         # Run input checks
-
         self._check_params()
         self.random_state = check_random_state(self.random_state)
         self._process_data(X, y)
@@ -1053,7 +1062,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples, n_features = self.X.shape
         n_hyper_par = len(hyper_par)
 
-        if self.log_likelihood_mode == 'noiseless':
+        if self.llf_mode == 'noiseless':
             theta = hyper_par
             noise_var = 0
 
@@ -1072,7 +1081,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2) + \
                 2. * np.log(np.diag(L)).sum() + n_samples)
 
-        elif self.log_likelihood_mode == 'nugget_estim':
+        elif self.llf_mode == 'nugget_estim':
             theta, alpha = hyper_par[:-1], hyper_par[-1]
             R0 = self.correlation_matrix(theta)
             R = alpha * R0 + (1 - alpha) * np.eye(n_samples)
@@ -1091,7 +1100,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + \
                 2. * np.log(np.diag(L)).sum() + n_samples)
 
-        elif self.log_likelihood_mode == 'noisy':
+        elif self.llf_mode == 'noisy':
             theta, sigma2 = hyper_par[:-1], hyper_par[-1]
             noise_var = self.noise_var
             sigma2_total = sigma2 + noise_var
@@ -1139,7 +1148,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         log_likelihood_grad = np.zeros((n_hyper_par, 1))
 
-        if self.log_likelihood_mode == 'noiseless':
+        if self.llf_mode == 'noiseless':
             # The grad tensor of R w.r.t. theta
             R_grad_tensor = self.corr_grad_theta(theta, self.X, R0)
 
@@ -1149,7 +1158,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 log_likelihood_grad[i] = np.sum(_upper * R_grad_upper) / sigma2  \
                     - np.sum(Rinv_upper * R_grad_upper)
 
-        elif self.log_likelihood_mode == 'nugget_estim':
+        elif self.llf_mode == 'nugget_estim':
             # The grad tensor of R w.r.t. theta: note that the additional v below
             R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
 
@@ -1166,7 +1175,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             log_likelihood_grad[n_hyper_par - 1] = -0.5 * (np.sum(Rinv * R_dv) \
                 - np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
 
-        elif self.log_likelihood_mode == 'noisy':
+        elif self.llf_mode == 'noisy':
             gamma_ = gamma / sigma2_total
             Cinv = Rinv / sigma2_total
             # Covariance: partial derivatives w.r.t. theta
@@ -1187,7 +1196,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         This function estimates the autocorrelation parameters theta as the
         maximizer of the reduced likelihood function.
         (Minimization of the opposite reduced likelihood function is used for
-        convenience)
+        infoenience)
 
         Parameters
         ----------
@@ -1209,100 +1218,97 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # Initialize output
         optimal_par = {}
 
-        # TODO: we might not need these
-        thetaL = np.atleast_2d(self.thetaL)
-        thetaU = np.atleast_2d(self.thetaU)
-        bounds = np.c_[thetaL.T, thetaU.T]
-
-        if not np.isfinite(bounds).all() and self.random_start > 1:
-            raise ValueError(
-                    "Multiple optimizer restarts (n_restarts_optimizer>0) "
-                    "requires that all bounds are finite.")
-
         if self.verbose:
             print("The chosen optimizer is: " + str(self.optimizer))
-            print('Log-likelihood mode: {}'.format(self.log_likelihood_mode))
+            print('Log-likelihood mode: {}'.format(self.llf_mode))
             if self.random_start > 1:
                 print(str(self.random_start) +
                       " random restarts are specified.")
+                      
+        # setup the log10 search bounds
+        bounds = np.c_[self.thetaL, self.thetaU]
+        if self.llf_mode == 'nugget_estim':
+            alpha_bound = np.atleast_2d([1e-10, 1.0 - 1e-10])
+            bounds = np.r_[bounds, alpha_bound]
 
-        elif self.optimizer == 'BFGS':
+        elif self.llf_mode == 'noisy':
+            # TODO: better estimation the upper and lowe bound of sigma2
+            # TODO: implement optimization for the heterogenous case
+            sigma2_upper = self.y.std() ** 2. - self.noise_var
+            sigma2_bound = np.atleast_2d([1e-5, sigma2_upper])
+            bounds = np.r_[bounds, sigma2_bound]
+
+        log10bounds = log10(bounds)
+        log10theta0 = log10(self.theta0) if self.theta0 is not None else \
+            np.random.uniform(log10(bounds)[:, 0], log10(bounds)[:, 1])
+
+        log10param = log10theta0 if self.llf_mode not in ['nugget_estim', 'noisy'] else \
+            np.r_[log10theta0, uniform(log10bounds[-1, 0], log10bounds[-1, 1])]
+            
+        # L-BFGS method based on analytical gradient
+        if self.optimizer == 'BFGS':
             def obj_func(log10param):
                 param = 10. ** np.array(log10param)
                 __ = self.log_likelihood_function(param, eval_grad=True)
                 return -__[0], -__[1] * param.reshape(-1, 1)
 
-            if self.log_likelihood_mode == 'nugget_estim':
-                alpha_bound = np.atleast_2d([1e-10, 1.0 - 1e-10])
-                bounds = np.r_[bounds, alpha_bound]
-
-            elif self.log_likelihood_mode == 'noisy':
-                # TODO: better estimation the upper and lowe bound of sigma2
-                # TODO: implement for heterogenous case
-                sigma2_upper = self.y.std() ** 2. - self.noise_var
-                sigma2_bound = np.atleast_2d([1e-5, sigma2_upper])
-                bounds = np.r_[bounds, sigma2_bound]
-
-            log10bounds = log10(bounds)
-
             llf_opt = np.inf
-            dim = self.thetaL.shape[1]
+            dim = len(self.thetaL)
             eval_budget = 100 * dim
-            c = 0  # stagnation counter
+            wait_count = 0  # stagnation counter
 
             # L-BFGS-B algorithm with restarts
             for iteration in range(self.random_start):
                 # if the model has been optimized before,
                 # then use the last optimized hyperparameters
-                if hasattr(self, 'theta_'):
-                    if self.log_likelihood_mode == 'nugget_estim':
-                        log10param = np.r_[log10(self.theta_),
-                                           log10(1. / (self.noise_var / 
-                                           self.sigma2 + 1.))]
+                # if hasattr(self, 'theta_'):
+                #     if self.llf_mode == 'nugget_estim':
+                #         log10param = np.r_[log10(self.theta_),
+                #                            log10(1. / 
+                #                            (self.noise_var / self.sigma2 + 1.))]
 
-                    elif self.log_likelihood_mode == 'noisy':
-                            log10param = np.r_[log10(self.theta_), 
-                                               log10(self.sigma2)]
-                elif self.theta0 is not None and \
-                    self.log_likelihood_mode in ['nugget_estim', 'noisy']:
-                    log10param = np.r_[log10(self.theta0).flatten(),
-                                       np.random.uniform(log10bounds[-1, 0],
-                                                         log10bounds[-1, 1])]
-                else:
-                    log10param = np.random.uniform(log10bounds[:, 0], 
-                                                   log10bounds[:, 1])
+                #     elif self.llf_mode == 'noisy':
+                #         log10param = np.r_[log10(self.theta_), 
+                #                            log10(self.sigma2)]
 
-                param_opt_, llf_opt_, convergence_dict = \
-                    fmin_l_bfgs_b(obj_func, log10param, 
-                                  bounds=log10bounds,
-                                  maxfun=eval_budget)
+                if iteration != 0:
+                    log10param = np.random.uniform(log10bounds[:, 0], log10bounds[:, 1])
+
+                param_opt_, llf_opt_, info = fmin_l_bfgs_b(obj_func, log10param, 
+                                                           bounds=log10bounds,
+                                                           maxfun=eval_budget)
                 if iteration == 0:
                     param_opt = param_opt_
 
-                if convergence_dict["warnflag"] != 0 and self.verbose:
-                    warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
-                          " state: %s" % convergence_dict)
-                if self.verbose:
-                    print('iteration: ', iteration+1, convergence_dict['funcalls'], llf_opt)
-
                 if llf_opt_ < llf_opt:
                     param_opt, llf_opt = param_opt_, llf_opt_
-                    c = 0
+                    wait_count = 0
                 else:
-                    c += 1
+                    wait_count += 1
 
-                # if function evaluation budget is gone or stagnation...
-                eval_budget -= convergence_dict['funcalls']
-                if eval_budget <= 0 or c >= self.wait_iter:
+                # if info["warnflag"] != 0 and self.verbose:
+                #     warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
+                                  # " state: %s" % info)
+                if self.verbose:
+                    print('iteration: ', iteration + 1, info['funcalls'], llf_opt)
+
+                eval_budget -= info['funcalls']
+                if eval_budget <= 0 or wait_count >= self.wait_iter:
                     break
+                
+        elif self.optimizer == 'CMA':
+            def obj_func(log10param):
+                param = 10. ** np.array(log10param)
+                __ = self.log_likelihood_function(param)
+                return -__[0]
 
-            optimal_param = 10. ** param_opt
-            optimal_llf_value = self.log_likelihood_function(optimal_param, optimal_par)
+        optimal_param = 10. ** param_opt
+        optimal_llf_value = self.log_likelihood_function(optimal_param, optimal_par)
 
-            if self.log_likelihood_mode in ['nugget_estim', 'noisy']:
-                optimal_theta = optimal_param[:-1]
-            else:
-                optimal_theta = optimal_param
+        if self.llf_mode in ['nugget_estim', 'noisy']:
+            optimal_theta = optimal_param[:-1]
+        else:
+            optimal_theta = optimal_param
 
         return optimal_theta, optimal_llf_value, optimal_par
 
@@ -1334,12 +1340,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                  % (self._correlation_types.keys(), self.corr))
 
         # Check correlation parameters
-        self.theta0 = np.atleast_2d(self.theta0)
+        # self.theta0 = np.atleast_2d(self.theta0)
         lth = self.theta0.size
 
         if self.thetaL is not None and self.thetaU is not None:
-            self.thetaL = np.atleast_2d(self.thetaL)
-            self.thetaU = np.atleast_2d(self.thetaU)
             if self.thetaL.size != lth or self.thetaU.size != lth:
                 raise ValueError("theta0, thetaL and thetaU must have the "
                                  "same length.")
