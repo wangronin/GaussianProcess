@@ -608,11 +608,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         'CMA']
 
     # 10. * MACHINE_EPSILON
-    def __init__(self, regr='constant', corr='squared_exponential', 
-                 beta0=None, verbose=False, theta0=1e-1, thetaL=None, 
-                 thetaU=None, sigma2=None, optimizer='BFGS', random_start=1,
-                 normalize=False, nugget=None, nugget_estim=False, 
-                 wait_iter=5, random_state=None):
+    def __init__(self, regr='constant', corr='squared_exponential', beta0=None, 
+                 theta0=1e-1, thetaL=None, thetaU=None, sigma2=None, optimizer='BFGS', 
+                 normalize=False, random_start=1, nugget=None, nugget_estim=False, 
+                 wait_iter=5, random_state=None, verbose=False):
 
         self.regr = regr
         self.corr = corr
@@ -684,8 +683,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Calculate matrix of distances D between samples
         D, ij = l1_cross_distances(X)
-        if (np.min(np.sum(D, axis=1)) == 0.
-                and self.corr != pure_nugget):
+        if (np.min(np.sum(D, axis=1)) == 0. and self.corr != pure_nugget):
             raise Exception("Multiple input features cannot have the same"
                             " target value.")
 
@@ -882,8 +880,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     u = np.zeros((n_targets, n_eval))
 
                 MSE = np.dot(self.sigma2.reshape(n_targets, 1),
-                             (1. - (rt ** 2.).sum(axis=0)
-                              + (u ** 2.).sum(axis=0))[np.newaxis, :])
+                             (1. - (rt ** 2.).sum(axis=0) + 
+                             (u ** 2.).sum(axis=0))[np.newaxis, :])
                 MSE = np.sqrt((MSE ** 2.).sum(axis=0) / n_targets)
 
                 # Mean Squared Error might be slightly negative depending on
@@ -1007,18 +1005,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         return L, Ft, Yt, Q, G, rho
 
-    def log_likelihood_function(self, hyper_par, par_out=None, 
-                                eval_grad=False):
+    def log_likelihood_function(self, hyper_par, par_out=None, eval_grad=False):
         """
         TODO: rewrite the documentation here
         TODO: maybe eval_hessian in the future?...
         This function determines the BLUP parameters and evaluates the reduced
         likelihood function for the given autocorrelation parameters theta.
-
-        Maximizing this function wrt the autocorrelation parameters theta is
-        equivalent to maximizing the likelihood of the assumed joint Gaussian
-        distribution of the observations y evaluated onto the design of
-        experiments X.
 
         Parameters
         ----------
@@ -1060,7 +1052,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Retrieve data
         n_samples, n_features = self.X.shape
-        n_hyper_par = len(hyper_par)
+        n_par = len(hyper_par)
 
         if self.llf_mode == 'noiseless':
             theta = hyper_par
@@ -1072,14 +1064,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
             except linalg.LinAlgError:
                 if eval_grad:
-                    return (log_likelihood, np.zeros(n_hyper_par, 1))
+                    return (log_likelihood, np.zeros(n_par, 1))
                 else:
                     return log_likelihood
                     
             sigma2 = (rho ** 2.).sum(axis=0) / n_samples
-
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2) + \
-                2. * np.log(np.diag(L)).sum() + n_samples)
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2) + 
+                                     2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.llf_mode == 'nugget_estim':
             theta, alpha = hyper_par[:-1], hyper_par[-1]
@@ -1090,15 +1081,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
             except linalg.LinAlgError:
                 if eval_grad:
-                    return (log_likelihood, np.zeros(n_hyper_par, 1))
+                    return (log_likelihood, np.zeros(n_par, 1))
                 else:
                     return log_likelihood
 
             sigma2_total = (rho ** 2.).sum(axis=0) / n_samples
             sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
-
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + \
-                2. * np.log(np.diag(L)).sum() + n_samples)
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + 
+                                     2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.llf_mode == 'noisy':
             theta, sigma2 = hyper_par[:-1], hyper_par[-1]
@@ -1113,12 +1103,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
             except linalg.LinAlgError:
                 if eval_grad:
-                    return (log_likelihood, np.zeros(n_hyper_par, 1)) 
+                    return (log_likelihood, np.zeros(n_par, 1)) 
                 else: 
                     return log_likelihood
 
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) \
-                + 2. * np.log(np.diag(L)).sum() + np.dot(rho.T, rho) / sigma2_total)
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + 
+                                     2. * np.log(np.diag(L)).sum() + 
+                                     np.dot(rho.T, rho) / sigma2_total)
 
         if par_out is not None:
             par_out['sigma2'] = sigma2
@@ -1134,7 +1125,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # for verificationn
         # TODO: remove this in the future
         if np.exp(log_likelihood) > 1:
-            return -np.inf, np.zeros((n_hyper_par, 1)) if eval_grad else -np.inf
+            return -np.inf, np.zeros((n_par, 1)) if eval_grad else -np.inf
             
         if not eval_grad:
             return log_likelihood
@@ -1146,16 +1137,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         Rinv_upper = Rinv[np.triu_indices(n_samples, 1)]
         _upper = gamma.dot(gamma.T)[np.triu_indices(n_samples, 1)]
 
-        log_likelihood_grad = np.zeros((n_hyper_par, 1))
+        llf_grad = np.zeros((n_par, 1))
 
         if self.llf_mode == 'noiseless':
             # The grad tensor of R w.r.t. theta
             R_grad_tensor = self.corr_grad_theta(theta, self.X, R0)
 
-            for i in range(n_hyper_par):
+            for i in range(n_par):
                 R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
 
-                log_likelihood_grad[i] = np.sum(_upper * R_grad_upper) / sigma2  \
+                llf_grad[i] = np.sum(_upper * R_grad_upper) / sigma2 \
                     - np.sum(Rinv_upper * R_grad_upper)
 
         elif self.llf_mode == 'nugget_estim':
@@ -1163,17 +1154,17 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
 
             # partial derivatives w.r.t theta's
-            for i in range(n_hyper_par - 1):
+            for i in range(n_par - 1):
                 R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
 
                 # Note that sigma2_total is used here
-                log_likelihood_grad[i] = np.sum(_upper * R_grad_upper) / sigma2_total \
+                llf_grad[i] = np.sum(_upper * R_grad_upper) / sigma2_total \
                     - np.sum(Rinv_upper * R_grad_upper)
 
             # partial derivatives w.r.t 'v'
             R_dv = R0 - np.eye(n_samples)
-            log_likelihood_grad[n_hyper_par - 1] = -0.5 * (np.sum(Rinv * R_dv) \
-                - np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
+            llf_grad[n_par - 1] = -0.5 * (np.sum(Rinv * R_dv) - 
+                                          np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
 
         elif self.llf_mode == 'noisy':
             gamma_ = gamma / sigma2_total
@@ -1184,12 +1175,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Covariance: partial derivatives w.r.t. sigma2
             C_grad_tensor = np.concatenate([C_grad_tensor, R0[..., np.newaxis]], axis=2)
 
-            for i in range(n_hyper_par):
+            for i in range(n_par):
                 C_grad = C_grad_tensor[:, :, i]
-                log_likelihood_grad[i] = -0.5 * (np.sum(Cinv * C_grad) \
-                    - np.dot(gamma_.T, C_grad).dot(gamma_))
+                llf_grad[i] = -0.5 * (np.sum(Cinv * C_grad) - 
+                                      np.dot(gamma_.T, C_grad).dot(gamma_))
                 
-        return log_likelihood, log_likelihood_grad
+        return log_likelihood, llf_grad
 
     def _arg_max_reduced_likelihood_function(self):
         """
@@ -1197,10 +1188,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         maximizer of the reduced likelihood function.
         (Minimization of the opposite reduced likelihood function is used for
         infoenience)
-
-        Parameters
-        ----------
-        self : All parameters are stored in the Gaussian Process model object.
 
         Returns
         -------
@@ -1288,7 +1275,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
                 # if info["warnflag"] != 0 and self.verbose:
                 #     warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
-                                  # " state: %s" % info)
+                #                   " state: %s" % info)
                 if self.verbose:
                     print('iteration: ', iteration + 1, info['funcalls'], llf_opt)
 
