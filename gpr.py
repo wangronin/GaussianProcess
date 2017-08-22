@@ -2,9 +2,9 @@
 
 # Author: Hao Wang <wangronin@gmail.com>
 
+# from __future__ import print_function
 
-from __future__ import print_function
-
+import pdb
 import numpy as np
 from numpy.random import uniform
 from numpy import log, pi, log10
@@ -13,6 +13,8 @@ from scipy import linalg
 from scipy.linalg import cho_solve
 from scipy.optimize import fmin_l_bfgs_b
 from scipy.special import kv, gamma
+
+from .cma_es import cma_es
 
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import manhattan_distances
@@ -28,7 +30,7 @@ MACHINE_EPSILON = np.finfo(np.double).eps
 The built-in regression models submodule for the gaussian_process module.
 """
 
-
+    
 def constant(x):
     """
     Zero order polynomial (constant, p = 1) regression model.
@@ -111,7 +113,6 @@ The built-in correlation models submodule for the gaussian_process module.
 TODO: The grad of the correlation should be implemented in the 
 correlation models
 """
-
 
 def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
            length_scale_bounds=(1e-5, 1e5), nu=1.5):
@@ -200,6 +201,12 @@ def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
 #        else:
 #            return K, K_gradient
     return K
+
+def hamming(theta, d):
+    pass
+
+def mixed_integer(theta, d):
+    pass
 
 
 def absolute_exponential(theta, d):
@@ -579,7 +586,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         Specified theta OR the best set of autocorrelation parameters (the \
         sought maximizer of the reduced likelihood function).
 
-    reduced_likelihood_function_value_ : array
+    log_likelihood_ : array
         The optimal reduced likelihood function value.
 
     Examples
@@ -611,7 +618,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def __init__(self, regr='constant', corr='squared_exponential', beta0=None, 
                  theta0=1e-1, thetaL=None, thetaU=None, sigma2=None, optimizer='BFGS', 
                  normalize=False, random_start=1, nugget=None, nugget_estim=False, 
-                 wait_iter=5, random_state=None, verbose=False):
+                 wait_iter=5, eval_budget=None, random_state=None, verbose=False):
 
         self.regr = regr
         self.corr = corr
@@ -635,6 +642,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.random_start = random_start
         self.random_state = random_state
         self.wait_iter = wait_iter
+        self.eval_budget = eval_budget
 
         self.noise_var = np.atleast_1d(nugget) if nugget is not None else None
         self.nugget_estim = True if nugget_estim else False
@@ -744,24 +752,21 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if self.thetaL is not None and self.thetaU is not None:
             # Maximum Likelihood Estimation of the parameters
             if self.verbose:
-                print("Performing Maximum Likelihood Estimation of the "
-                      "autocorrelation parameters...")
-            self.theta_, self.reduced_likelihood_function_value_, par = \
-                self._arg_max_reduced_likelihood_function()
-            if np.isinf(self.reduced_likelihood_function_value_):
-                raise Exception("Bad parameter region. "
-                                "Try increasing upper bound")
+                print ("Maximum Likelihood Estimation of the hyperparameters...")
+            self.theta_, self.log_likelihood_, par = self._arg_max_log_likelihood_function()
+            
+            if np.isinf(self.log_likelihood_):
+                raise Exception("Bad parameter region. Try increasing upper bound")
         else:
             # Given parameters
             if self.verbose:
-                print("Given autocorrelation parameters. "
-                      "Computing Gaussian Process model parameters...")
+                print "Given hyperparameters"
+                
             par = {}
             self.theta_ = self.theta0
-            self.reduced_likelihood_function_value_ = \
-                self.log_likelihood_function(np.r_[self.theta_.flatten(), 
-                                             self.sigma2], par)
-            if np.isinf(self.reduced_likelihood_function_value_):
+            self.log_likelihood_ = self.log_likelihood_function(np.r_[self.theta_.flatten(), 
+                                                                      self.sigma2], par)
+            if np.isinf(self.log_likelihood_):
                 raise Exception("Bad point. Try increasing theta0.")
 
         self.noise_var = par['noise_var']
@@ -1128,7 +1133,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             return -np.inf, np.zeros((n_par, 1)) if eval_grad else -np.inf
             
         if not eval_grad:
-            return log_likelihood
+            return log_likelihood[0]
 
         # gradient calculation of the log-likelihood
         gamma = linalg.solve_triangular(L.T, rho).reshape(-1, 1)
@@ -1180,9 +1185,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 llf_grad[i] = -0.5 * (np.sum(Cinv * C_grad) - 
                                       np.dot(gamma_.T, C_grad).dot(gamma_))
                 
-        return log_likelihood, llf_grad
+        return log_likelihood[0], llf_grad
 
-    def _arg_max_reduced_likelihood_function(self):
+    def _arg_max_log_likelihood_function(self):
         """
         This function estimates the autocorrelation parameters theta as the
         maximizer of the reduced likelihood function.
@@ -1202,15 +1207,11 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             The BLUP parameters associated to thetaOpt.
         """
 
-        # Initialize output
-        optimal_par = {}
-
         if self.verbose:
-            print("The chosen optimizer is: " + str(self.optimizer))
-            print('Log-likelihood mode: {}'.format(self.llf_mode))
+            print "The chosen optimizer is: " + str(self.optimizer)
+            print 'Log-likelihood mode: {}'.format(self.llf_mode)
             if self.random_start > 1:
-                print(str(self.random_start) +
-                      " random restarts are specified.")
+                print "{} random restarts are specified.".format(self.random_start)
                       
         # setup the log10 search bounds
         bounds = np.c_[self.thetaL, self.thetaU]
@@ -1226,11 +1227,25 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             bounds = np.r_[bounds, sigma2_bound]
 
         log10bounds = log10(bounds)
-        log10theta0 = log10(self.theta0) if self.theta0 is not None else \
-            np.random.uniform(log10(bounds)[:, 0], log10(bounds)[:, 1])
+        
+        # if the model has been optimized before as the starting point,
+        # then use the last optimized hyperparameters
+        # supposed to be good for updating the model incrementally
+        # TODO: validate this
+        if hasattr(self, 'theta_'):
+            log10theta0 = log10(self.theta_)
+        else:
+            log10theta0 = log10(self.theta0) if self.theta0 is not None else \
+                np.random.uniform(log10(bounds)[:, 0], log10(bounds)[:, 1])
 
         log10param = log10theta0 if self.llf_mode not in ['nugget_estim', 'noisy'] else \
             np.r_[log10theta0, uniform(log10bounds[-1, 0], log10bounds[-1, 1])]
+            
+        optimal_par = {}
+        n_par = len(log10param)
+        # TODO: how to set this properly? or it should be left open for the user
+        eval_budget = 200 * n_par if self.eval_budget is None else self.eval_budget
+        llf_opt = np.inf
             
         # L-BFGS method based on analytical gradient
         if self.optimizer == 'BFGS':
@@ -1238,26 +1253,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 param = 10. ** np.array(log10param)
                 __ = self.log_likelihood_function(param, eval_grad=True)
                 return -__[0], -__[1] * param.reshape(-1, 1)
-
-            llf_opt = np.inf
-            dim = len(self.thetaL)
-            eval_budget = 100 * dim
+            
             wait_count = 0  # stagnation counter
-
-            # L-BFGS-B algorithm with restarts
             for iteration in range(self.random_start):
-                # if the model has been optimized before,
-                # then use the last optimized hyperparameters
-                # if hasattr(self, 'theta_'):
-                #     if self.llf_mode == 'nugget_estim':
-                #         log10param = np.r_[log10(self.theta_),
-                #                            log10(1. / 
-                #                            (self.noise_var / self.sigma2 + 1.))]
-
-                #     elif self.llf_mode == 'noisy':
-                #         log10param = np.r_[log10(self.theta_), 
-                #                            log10(self.sigma2)]
-
                 if iteration != 0:
                     log10param = np.random.uniform(log10bounds[:, 0], log10bounds[:, 1])
 
@@ -1266,29 +1264,45 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                                            maxfun=eval_budget)
                 if iteration == 0:
                     param_opt = param_opt_
-
-                if llf_opt_ < llf_opt:
+                    llf_opt =llf_opt_
+                elif (llf_opt - llf_opt_) / max(abs(llf_opt), abs(llf_opt), 1) >= 1e7 * MACHINE_EPSILON:
                     param_opt, llf_opt = param_opt_, llf_opt_
                     wait_count = 0
                 else:
                     wait_count += 1
 
-                # if info["warnflag"] != 0 and self.verbose:
-                #     warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
-                #                   " state: %s" % info)
                 if self.verbose:
-                    print('iteration: ', iteration + 1, info['funcalls'], llf_opt)
+                    print 'restart {} {} evals, best llf: {}'.format(iteration + 1, 
+                                                                     info['funcalls'], -llf_opt)
+                    if info["warnflag"] != 0:
+                        warnings.warn("fmin_l_bfgs_b terminated abnormally with "
+                                      "the state: {}".format(info))
 
                 eval_budget -= info['funcalls']
                 if eval_budget <= 0 or wait_count >= self.wait_iter:
                     break
                 
-        elif self.optimizer == 'CMA':
+        elif self.optimizer == 'CMA':   # IPOP-CMA-ES 
             def obj_func(log10param):
                 param = 10. ** np.array(log10param)
                 __ = self.log_likelihood_function(param)
-                return -__[0]
+                return __
+            
+            opt = {'sigma_init': 0.25 * np.max(log10bounds[:, 1] - log10bounds[:, 0]),
+                   'eval_budget': eval_budget,
+                   'f_target': np.inf,
+                   'lb': log10bounds[:, 1],
+                   'ub': log10bounds[:, 0],
+                   'restart_budget': self.random_start}
 
+            optimizer = cma_es(n_par, log10param, obj_func, opt, is_minimize=False,
+                               restart='IPOP')
+            param_opt, llf_opt, evalcount, info = optimizer.optimize()
+            param_opt = param_opt.flatten()
+            
+            if self.verbose:
+                print '{} evals, best llf: {}'.format(evalcount, -llf_opt)
+                
         optimal_param = 10. ** param_opt
         optimal_llf_value = self.log_likelihood_function(optimal_param, optimal_par)
 

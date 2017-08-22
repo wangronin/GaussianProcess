@@ -23,7 +23,6 @@ from sklearn.metrics.pairwise import manhattan_distances
 
 import warnings
 
-
 MACHINE_EPSILON = np.finfo(np.double).eps
 from .gpr import GaussianProcess
 
@@ -33,14 +32,15 @@ class GaussianProcess_extra(GaussianProcess):
                  beta0=None, verbose=False,
                  theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
                  optimizer='BFGS', random_start=10, normalize=False, wait_iter=5,
+                 eval_budget=None,
                  nugget=10. * MACHINE_EPSILON, nugget_estim=False, random_state=None):
 
         super(GaussianProcess_extra, self).__init__(regr=regr,
                  corr=corr, beta0=beta0,
                  verbose=verbose, theta0=theta0, thetaL=thetaL, thetaU=thetaU,
                  optimizer=optimizer, random_start=random_start, normalize=normalize,
-                 nugget=nugget, nugget_estim=nugget_estim,
-                 random_state=random_state)
+                 nugget=nugget, nugget_estim=nugget_estim, wait_iter=wait_iter, 
+                 eval_budget=eval_budget, random_state=random_state)
 
         self.regr_type = regr
         self.corr_type = corr
@@ -175,7 +175,7 @@ class GaussianProcess_extra(GaussianProcess):
                     pass
                 elif self.corr_type == 'linear':
                     pass
-            except Warning as w:
+            except Warning:
                 grad = np.zeros((n_features, n_samples))
 
         return grad
@@ -247,6 +247,11 @@ class GaussianProcess_extra(GaussianProcess):
             C_prior = sqrt((C_prior ** 2.).sum(axis=0) / n_targets)
 
             return C_prior
+    
+    def posterior_kernel(self):
+        # TODO: 
+        # create the posterior kernel function
+        return None
 
 
     def predict(self, X, eval_MSE=False, eval_cov=False, batch_size=None):

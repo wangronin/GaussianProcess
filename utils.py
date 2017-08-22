@@ -5,10 +5,15 @@ Created on Thu Nov 12 16:19:28 2015
 @author: wangronin
 """
 
+import pdb
 import numpy as np
 from numpy import pi, log
+
+import matplotlib as mpl
+#mpl.use('MacOSX')
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+import matplotlib.tri as mtri
 
 ## SMSE measurement
 # test_y is the target, pred_y the predicted target, both 1D arrays of same length
@@ -91,10 +96,15 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
        fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
        if is_log:
            fitness = np.log(fitness)
-       CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.winter, linewidths=1)
-#        plt.clabel(CS, inline=1, fontsize=5)
+       CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1, offset=0)
+       plt.clabel(CS, inline=1, fontsize=15)
+       
+#       tri = mtri.Triangulation(X.flatten(), Y.flatten())
+#       ax.plot_trisurf(X.flatten(), Y.flatten(), fitness.flatten(), 
+#                       triangles=tri.triangles, cmap=plt.cm.Spectral, alpha=0.8)
+       ax.plot_surface(X, Y, fitness, rstride=1, cstride=1, cmap=plt.cm.Spectral, linewidth=0, alpha=0.5)
 #        fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
-   except:
+   except Exception as e:
        pdb.set_trace()
 
    # calculate function gradients
@@ -119,10 +129,72 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
                       headlength=5)
 
 #        fig.colorbar(CS, ax=ax)
-
+    
    ax.set_xlabel('$x_1$')
    ax.set_ylabel('$x_2$')
+   ax.set_zlabel('$f$')
    ax.grid(True)
    ax.set_title(title)
    ax.set_xlim(x_lb[0], x_ub[0])
    ax.set_ylim(x_lb[1], x_ub[1])
+   
+   
+def plot_surface_contour(ax, f, grad, x_lb, x_ub, title='f', 
+                         log_transform=False, n_level=30, foo=0,
+                         f_data=None, grad_data=None,n_per_axis=200):
+    
+    fig = ax.figure
+    x = np.linspace(x_lb[0], x_ub[0], n_per_axis)
+    y = np.linspace(x_lb[1], x_ub[1], n_per_axis)
+    X, Y = np.meshgrid(x, y)
+
+#    divider = make_axes_locatable(ax)
+#    cax = divider.append_axes("right", size="5%", pad=0.05)
+
+    if f_data is None:
+        fitness = np.array([f(p.reshape(1, -1)) for p in np.c_[X.flatten(), Y.flatten()]]).reshape(-1, len(x))
+    else:
+        fitness = f_data
+    try:
+        fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
+        if log_transform:
+            fitness = np.log(fitness)
+        CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.winter, linewidths=1, offset=0)
+        plt.clabel(CS, inline=1, fontsize=15)
+        
+        tri = mtri.Triangulation(X, Y)
+        ax.plot_trisurf(X, Y, fitness, rstride=1, cstride=1, cmap=plt.cm.Spectral, linewidth=0, alpha=0.3)
+#        fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
+    except:
+        pdb.set_trace()
+
+   # calculate function gradients
+    x1 = np.linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
+    x2 = np.linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
+    X1, X2 = np.meshgrid(x1, x2)
+
+    if grad is not None:
+        if grad_data is None:
+            dx = np.array([grad(p).flatten() for p in np.c_[X1.flatten(), X2.flatten()]])
+            np.save('grad.npy', dx)
+        else:
+            dx = grad_data
+
+        dx_norm = np.sqrt(np.sum(dx ** 2.0, axis=1)) # in case of zero gradients
+        dx /= dx_norm.reshape(-1, 1)
+        dx1 = dx[:, 0].reshape(-1, len(x1))
+        dx2 = dx[:, 1].reshape(-1, len(x1))
+
+        CS = ax.quiver(X1, X2, dx1, dx2, dx_norm, cmap=plt.cm.jet,
+                      #norm=colors.LogNorm(vmin=1e-100, vmax=dx_norm.max()),
+                      headlength=5)
+
+#        fig.colorbar(CS, ax=ax)
+    
+    ax.set_xlabel('$x_1$')
+    ax.set_ylabel('$x_2$')
+    ax.grid(True)
+    ax.set_title(title)
+    ax.set_xlim(x_lb[0], x_ub[0])
+    ax.set_ylim(x_lb[1], x_ub[1])
+
