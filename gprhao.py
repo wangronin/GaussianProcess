@@ -65,8 +65,9 @@ class GaussianProcess_extra(GaussianProcess):
             raise Exception('x must be a vector!')
 
         # trend and its Jacobian
-        f = self.regr(x).T
+        f = self.regr.F(x).T
         f_dx = self.regr_dx(x)
+#        f_dx = self.trend.dx(x)
 
         # correlation and its Jacobian
         d = manhattan_distances(x, Y=self.X, sum_over_features=False)
@@ -324,7 +325,7 @@ class GaussianProcess_extra(GaussianProcess):
             # Get pairwise componentwise L1-distances to the input training set
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get regression function and correlation
-            f = self.regr(X)
+            f = self.regr.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             if eval_cov:

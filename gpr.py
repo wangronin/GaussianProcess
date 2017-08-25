@@ -5,6 +5,8 @@
 # from __future__ import print_function
 
 import pdb
+import warnings
+
 import numpy as np
 from numpy.random import uniform
 from numpy import log, pi, log10
@@ -12,424 +14,18 @@ from numpy import log, pi, log10
 from scipy import linalg
 from scipy.linalg import cho_solve
 from scipy.optimize import fmin_l_bfgs_b
-from scipy.special import kv, gamma
-
-from .cma_es import cma_es
 
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_random_state, check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted
 
-import math
-import warnings
+from .cma_es import cma_es
+from .kernel import *
+from .trend import constant_trend, linear_trend, quadratic_trend
+
 
 MACHINE_EPSILON = np.finfo(np.double).eps
-
-"""
-The built-in regression models submodule for the gaussian_process module.
-"""
-
-    
-def constant(x):
-    """
-    Zero order polynomial (constant, p = 1) regression model.
-
-    x --> f(x) = 1
-
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-    x = np.asarray(x, dtype=np.float64)
-    n_eval = x.shape[0]
-    f = np.ones([n_eval, 1])
-    return f
-
-
-def linear(x):
-    """
-    First order polynomial (linear, p = n+1) regression model.
-
-    x --> f(x) = [ 1, x_1, ..., x_n ].T
-
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-    x = np.asarray(x, dtype=np.float64)
-    n_eval = x.shape[0]
-    f = np.hstack([np.ones([n_eval, 1]), x])
-    return f
-
-
-def quadratic(x):
-    """
-    Second order polynomial (quadratic, p = n*(n-1)/2+n+1) regression model.
-
-    x --> f(x) = [ 1, { x_i, i = 1,...,n }, { x_i * x_j,  (i,j) = 1,...,n } ].T
-                                                          i > j
-
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-
-    x = np.asarray(x, dtype=np.float64)
-    n_eval, n_features = x.shape
-    f = np.hstack([np.ones([n_eval, 1]), x])
-    for k in range(n_features):
-        f = np.hstack([f, x[:, k, np.newaxis] * x[:, k:]])
-
-    return f
-
-
-"""
-The built-in correlation models submodule for the gaussian_process module.
-TODO: The grad of the correlation should be implemented in the 
-correlation models
-"""
-
-def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
-           length_scale_bounds=(1e-5, 1e5), nu=1.5):
-    """
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.asarray(d, dtype=np.float64)
-
-    if d.ndim > 1:
-        n_features = d.shape[1]
-    else:
-        n_features = 1
-
-    if theta.size == 1:
-        return np.exp(-theta[0] * np.sum(d ** 2, axis=1))
-    elif theta.size != n_features:
-        raise ValueError("Length of theta must be 1 or %s" % n_features)
-    else:
-        return np.exp(-np.sum(theta.reshape(1, n_features) * d ** 2, axis=1))
-
-    """
-    theta = np.asarray(theta, dtype=np.float64)
-    X = np.asarray(X, dtype=np.float64)
-    if X.ndim > 1:
-        n_features = X.shape[1]
-    else:
-        n_features = 1
-
-    if theta.size == 1:
-        dists = np.sqrt(theta[0] * np.sum(X ** 2, axis=1))
-    else:
-        dists = np.sqrt(np.sum(theta.reshape(1, n_features) * X ** 2, axis=1))
-
-    # Matern 1/2
-    if nu == 0.5:
-        K = np.exp(-dists)
-    # Matern 3/2
-    elif nu == 1.5:
-
-        K = dists * math.sqrt(3)
-        K = (1. + K) * np.exp(-K)
-    # Matern 5/2
-    elif nu == 2.5:
-        K = dists * math.sqrt(5)
-        K = (1. + K + K ** 2 / 3.0) * np.exp(-K)
-    else:  # general case; expensive to evaluate
-        K = dists
-        K[K == 0.0] += np.finfo(float).eps  # strict zeros result in nan
-        tmp = (math.sqrt(2 * nu) * K)
-        K.fill((2 ** (1. - nu)) / gamma(nu))
-        K *= tmp ** nu
-        K *= kv(nu, tmp)
-
-    if eval_Dx:
-        pass
-
-    # infoert from upper-triangular matrix to square matrix
-    # K = squareform(K)
-    # np.fill_diagonal(K, 1)
-    if eval_Dtheta:
-        pass
-#        # We need to recompute the pairwise dimension-wise distances
-#        if self.anisotropic:
-#            D = (X[:, np.newaxis, :] - X[np.newaxis, :, :])**2 \
-#                / (length_scale ** 2)
-#        else:
-#            D = squareform(dists**2)[:, :, np.newaxis]
-#
-#        if self.nu == 0.5:
-#            K_gradient = K[..., np.newaxis] * D \
-#                / np.sqrt(D.sum(2))[:, :, np.newaxis]
-#            K_gradient[~np.isfinite(K_gradient)] = 0
-#        elif self.nu == 1.5:
-#            K_gradient = \
-#                3 * D * np.exp(-np.sqrt(3 * D.sum(-1)))[..., np.newaxis]
-#        elif self.nu == 2.5:
-#            tmp = np.sqrt(5 * D.sum(-1))[..., np.newaxis]
-#            K_gradient = 5.0 / 3.0 * D * (tmp + 1) * np.exp(-tmp)
-#        else:
-#            # approximate gradient numerically
-#            def f(theta):  # helper function
-#                return self.clone_with_theta(theta)(X, Y)
-#            return K, _approx_fprime(self.theta, f, 1e-10)
-#
-#        if not self.anisotropic:
-#            return K, K_gradient[:, :].sum(-1)[:, :, np.newaxis]
-#        else:
-#            return K, K_gradient
-    return K
-
-def hamming(theta, d):
-    pass
-
-def mixed_integer(theta, d):
-    pass
-
-
-def absolute_exponential(theta, d):
-    """
-    Absolute exponential autocorrelation model.
-    (Ornstein-Uhlenbeck stochastic process)::
-
-                                          n
-        theta, d --> r(theta, d) = exp(  sum  - theta_i * |d_i| )
-                                        i = 1
-
-    Parameters
-    ----------
-    theta : array_like
-        An array with shape 1 (isotropic) or n (anisotropic) giving the
-        autocorrelation parameter(s).
-
-    d : array_like
-        An array with shape (n_eval, n_features) giving the componentwise
-        distances between locations x and x' at which the correlation model
-        should be evaluated.
-
-    Returns
-    -------
-    r : array_like
-        An array with shape (n_eval, ) containing the values of the
-        autocorrelation model.
-    """
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.abs(np.asarray(d, dtype=np.float64))
-
-    if d.ndim > 1:
-        n_features = d.shape[1]
-    else:
-        n_features = 1
-
-    if theta.size == 1:
-        return np.exp(- theta[0] * np.sum(d, axis=1))
-    elif theta.size != n_features:
-        raise ValueError("Length of theta must be 1 or %s" % n_features)
-    else:
-        return np.exp(- np.sum(theta.reshape(1, n_features) * d, axis=1))
-
-
-def squared_exponential(theta, d):
-    """
-    Squared exponential correlation model (Radial Basis Function).
-    (Infinitely differentiable stochastic process, very smooth)::
-
-                                          n
-        theta, d --> r(theta, d) = exp(  sum  - theta_i * (d_i)^2 )
-                                        i = 1
-
-    Parameters
-    ----------
-    theta : array_like
-        An array with shape 1 (isotropic) or n (anisotropic) giving the
-        autocorrelation parameter(s).
-
-    d : array_like
-        An array with shape (n_eval, n_features) giving the componentwise
-        distances between locations x and x' at which the correlation model
-        should be evaluated.
-
-    Returns
-    -------
-    r : array_like
-        An array with shape (n_eval, ) containing the values of the
-        autocorrelation model.
-    """
-
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.asarray(d, dtype=np.float64)
-
-    if d.ndim > 1:
-        n_features = d.shape[1]
-    else:
-        n_features = 1
-
-    if theta.size == 1:
-        return np.exp(-theta[0] * np.sum(d ** 2, axis=1))
-    elif theta.size != n_features:
-        raise ValueError("Length of theta must be 1 or %s" % n_features)
-    else:
-        return np.exp(-np.sum(theta.reshape(1, n_features) * d ** 2, axis=1))
-
-
-def generalized_exponential(theta, d):
-    """
-    Generalized exponential correlation model.
-    (Useful when one does not know the smoothness of the function to be
-    predicted.)::
-
-                                          n
-        theta, d --> r(theta, d) = exp(  sum  - theta_i * |d_i|^p )
-                                        i = 1
-
-    Parameters
-    ----------
-    theta : array_like
-        An array with shape 1+1 (isotropic) or n+1 (anisotropic) giving the
-        autocorrelation parameter(s) (theta, p).
-
-    d : array_like
-        An array with shape (n_eval, n_features) giving the componentwise
-        distances between locations x and x' at which the correlation model
-        should be evaluated.
-
-    Returns
-    -------
-    r : array_like
-        An array with shape (n_eval, ) with the values of the autocorrelation
-        model.
-    """
-
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.asarray(d, dtype=np.float64)
-
-    if d.ndim > 1:
-        n_features = d.shape[1]
-    else:
-        n_features = 1
-
-    lth = theta.size
-    if n_features > 1 and lth == 2:
-        theta = np.hstack([np.repeat(theta[0], n_features), theta[1]])
-    elif lth != n_features + 1:
-        raise Exception("Length of theta must be 2 or %s" % (n_features + 1))
-    else:
-        theta = theta.reshape(1, lth)
-
-    td = theta[:, 0:-1].reshape(1, n_features) * np.abs(d) ** theta[:, -1]
-    r = np.exp(- np.sum(td, 1))
-
-    return r
-
-
-def pure_nugget(theta, d):
-    """
-    Spatial independence correlation model (pure nugget).
-    (Useful when one wants to solve an ordinary least squares problem!)::
-
-                                           n
-        theta, d --> r(theta, d) = 1 if   sum |d_i| == 0
-                                         i = 1
-                                   0 otherwise
-
-    Parameters
-    ----------
-    theta : array_like
-        None.
-
-    d : array_like
-        An array with shape (n_eval, n_features) giving the componentwise
-        distances between locations x and x' at which the correlation model
-        should be evaluated.
-
-    Returns
-    -------
-    r : array_like
-        An array with shape (n_eval, ) with the values of the autocorrelation
-        model.
-    """
-
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.asarray(d, dtype=np.float64)
-
-    n_eval = d.shape[0]
-    r = np.zeros(n_eval)
-    r[np.all(d == 0., axis=1)] = 1.
-
-    return r
-
-
-def cubic(theta, d):
-    """
-    Cubic correlation model::
-
-        theta, d --> r(theta, d) =
-          n
-         prod max(0, 1 - 3(theta_j*d_ij)^2 + 2(theta_j*d_ij)^3) ,  i = 1,...,m
-        j = 1
-
-    Parameters
-    ----------
-    theta : array_like
-        An array with shape 1 (isotropic) or n (anisotropic) giving the
-        autocorrelation parameter(s).
-
-    d : array_like
-        An array with shape (n_eval, n_features) giving the componentwise
-        distances between locations x and x' at which the correlation model
-        should be evaluated.
-
-    Returns
-    -------
-    r : array_like
-        An array with shape (n_eval, ) with the values of the autocorrelation
-        model.
-    """
-
-    theta = np.asarray(theta, dtype=np.float64)
-    d = np.asarray(d, dtype=np.float64)
-
-    if d.ndim > 1:
-        n_features = d.shape[1]
-    else:
-        n_features = 1
-
-    lth = theta.size
-    if lth == 1:
-        td = np.abs(d) * theta
-    elif lth != n_features:
-        raise Exception("Length of theta must be 1 or " + str(n_features))
-    else:
-        td = np.abs(d) * theta.reshape(1, n_features)
-
-    td[td > 1.] = 1.
-    ss = 1. - td ** 2. * (3. - 2. * td)
-    r = np.prod(ss, 1)
-
-    return r
-
 
 def l1_cross_distances(X):
     """
@@ -598,7 +194,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     """
 
     _regression_types = {
-        'constant': constant,
+        'constant': constant_trend,
         'linear': linear,
         'quadratic': quadratic}
 
@@ -673,21 +269,21 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self._check_params(n_samples)
 
         # Normalize data or don't
-        if self.normalize:
-            X_mean = np.mean(X, axis=0)
-            X_std = np.std(X, axis=0)
-            y_mean = np.mean(y, axis=0)
-            y_std = np.std(y, axis=0)
-            X_std[X_std == 0.] = 1.
-            y_std[y_std == 0.] = 1.
-            # center and scale X if necessary
-            X = (X - X_mean) / X_std
-            y = (y - y_mean) / y_std
-        else:
-            X_mean = np.zeros(1)
-            X_std = np.ones(1)
-            y_mean = np.zeros(1)
-            y_std = np.ones(1)
+#        if self.normalize:
+#            X_mean = np.mean(X, axis=0)
+#            X_std = np.std(X, axis=0)
+#            y_mean = np.mean(y, axis=0)
+#            y_std = np.std(y, axis=0)
+#            X_std[X_std == 0.] = 1.
+#            y_std[y_std == 0.] = 1.
+#            # center and scale X if necessary
+#            X = (X - X_mean) / X_std
+#            y = (y - y_mean) / y_std
+#        else:
+        X_mean = np.zeros(1)
+        X_std = np.ones(1)
+        y_mean = np.zeros(1)
+        y_std = np.ones(1)
 
         # Calculate matrix of distances D between samples
         D, ij = l1_cross_distances(X)
@@ -696,7 +292,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                             " target value.")
 
         # Regression matrix and parameters
-        F = self.regr(X)
+        F = self.regr.F(X)
         n_samples_F = F.shape[0]
         if F.ndim > 1:
             p = F.shape[1]
@@ -787,7 +383,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         """
         update the model's data set without re-estimation of parameters
         """
-
+        # TODO: implement incremental training 
         self.fit(X, y)
 
         return self
@@ -830,6 +426,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         check_is_fitted(self, "X")
 
         # Check input shapes
+        # TODO: remove the support for multiple independent outputs
         X = check_array(X)
         n_eval, _ = X.shape
         n_samples, n_features = self.X.shape
@@ -859,7 +456,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Get pairwise componentwise L1-distances to the input training set
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get regression function and correlation
-            f = self.regr(X)
+            f = self.regr.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             # Scaled predictor
@@ -1069,7 +666,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
             except linalg.LinAlgError:
                 if eval_grad:
-                    return (log_likelihood, np.zeros(n_par, 1))
+                    return (log_likelihood, np.zeros((n_par, 1)))
                 else:
                     return log_likelihood
                     
@@ -1243,11 +840,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             
         optimal_par = {}
         n_par = len(log10param)
-        # TODO: how to set this properly? or it should be left open for the user
+        # TODO: how to set this properly?
         eval_budget = 200 * n_par if self.eval_budget is None else self.eval_budget
         llf_opt = np.inf
             
-        # L-BFGS method based on analytical gradient
+        # a restarting L-BFGS method based on analytical gradient
+        # TODO: maybe adopt an ILS-like restarting heuristic?
         if self.optimizer == 'BFGS':
             def obj_func(log10param):
                 param = 10. ** np.array(log10param)
@@ -1262,17 +860,20 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 param_opt_, llf_opt_, info = fmin_l_bfgs_b(obj_func, log10param, 
                                                            bounds=log10bounds,
                                                            maxfun=eval_budget)
+                
+                diff = (llf_opt - llf_opt_) / max(abs(llf_opt_), abs(llf_opt), 1)
                 if iteration == 0:
                     param_opt = param_opt_
-                    llf_opt =llf_opt_
-                elif (llf_opt - llf_opt_) / max(abs(llf_opt), abs(llf_opt), 1) >= 1e7 * MACHINE_EPSILON:
+                    llf_opt =llf_opt_    
+                # TODO: verify this rule to determine the marginal improvement 
+                elif diff >= 1e7 * MACHINE_EPSILON:
                     param_opt, llf_opt = param_opt_, llf_opt_
                     wait_count = 0
                 else:
                     wait_count += 1
 
                 if self.verbose:
-                    print 'restart {} {} evals, best llf: {}'.format(iteration + 1, 
+                    print 'restart {} {} evals, best log likekihood value: {}'.format(iteration + 1, 
                                                                      info['funcalls'], -llf_opt)
                     if info["warnflag"] != 0:
                         warnings.warn("fmin_l_bfgs_b terminated abnormally with "
@@ -1301,7 +902,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             param_opt = param_opt.flatten()
             
             if self.verbose:
-                print '{} evals, best llf: {}'.format(evalcount, -llf_opt)
+                print '{} evals, best log likekihood value: {}'.format(evalcount, -llf_opt)
                 
         optimal_param = 10. ** param_opt
         optimal_llf_value = self.log_likelihood_function(optimal_param, optimal_par)
@@ -1316,13 +917,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def _check_params(self, n_samples=None):
 
         # Check regression model
-        if not callable(self.regr):
-            if self.regr in self._regression_types:
-                self.regr = self._regression_types[self.regr]
-            else:
-                raise ValueError("regr should be one of %s or callable, "
-                                 "%s was given."
-                                 % (self._regression_types.keys(), self.regr))
+#        if not callable(self.regr):
+#            if self.regr in self._regression_types:
+#                self.regr = self._regression_types[self.regr]
+#            else:
+#                raise ValueError("regr should be one of %s or callable, "
+#                                 "%s was given."
+#                                 % (self._regression_types.keys(), self.regr))
 
         # Check regression weights if given (Ordinary Kriging)
         if self.beta0 is not None:
