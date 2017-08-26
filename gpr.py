@@ -24,8 +24,8 @@ from .cma_es import cma_es
 from .kernel import *
 from .trend import constant_trend, linear_trend, quadratic_trend
 
-
 MACHINE_EPSILON = np.finfo(np.double).eps
+
 
 def l1_cross_distances(X):
     """
@@ -864,7 +864,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 diff = (llf_opt - llf_opt_) / max(abs(llf_opt_), abs(llf_opt), 1)
                 if iteration == 0:
                     param_opt = param_opt_
-                    llf_opt =llf_opt_    
+                    llf_opt = llf_opt_    
                 # TODO: verify this rule to determine the marginal improvement 
                 elif diff >= 1e7 * MACHINE_EPSILON:
                     param_opt, llf_opt = param_opt_, llf_opt_
@@ -873,8 +873,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     wait_count += 1
 
                 if self.verbose:
-                    print 'restart {} {} evals, best log likekihood value: {}'.format(iteration + 1, 
-                                                                     info['funcalls'], -llf_opt)
+                    print 'restart {} {} evals, best log likekihood value: {}'.format(iteration + \
+                        1, info['funcalls'], -llf_opt)
                     if info["warnflag"] != 0:
                         warnings.warn("fmin_l_bfgs_b terminated abnormally with "
                                       "the state: {}".format(info))
@@ -938,8 +938,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 self.corr = self._correlation_types[self.corr]
             else:
                 raise ValueError("corr should be one of %s or callable, "
-                                 "%s was given."
-                                 % (self._correlation_types.keys(), self.corr))
+                                 "%s was given." % (self._correlation_types.keys(), self.corr))
 
         # Check correlation parameters
         # self.theta0 = np.atleast_2d(self.theta0)
