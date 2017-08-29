@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
-# Author: Hao Wang <wangronin@gmail.com>
+# Author: Hao Wang 
+# Email: wangronin@gmail.com
 
 # from __future__ import print_function
 
@@ -367,7 +368,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         self.noise_var = par['noise_var']
         self.sigma2 = par['sigma2']
-        self.rho = par['rho']
+        self.rho = par['rho'] 
         self.Yt = par['Yt']
         self.C = par['C']
         self.Ft = par['Ft']
@@ -446,7 +447,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # (evaluates all given points in a single batch run)
 
             # Normalize input
-            X = (X - self.X_mean) / self.X_std
+#            X = (X - self.X_mean) / self.X_std
 
             # Initialize output
             y = np.zeros(n_eval)
@@ -454,13 +455,15 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 MSE = np.zeros(n_eval)
 
             # Get pairwise componentwise L1-distances to the input training set
+            # TODO: remove calculations of distances from here
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get regression function and correlation
             f = self.regr.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             # Scaled predictor
-            y_ = np.dot(f, self.beta) + np.dot(r, self.gamma)
+#            y_ = np.dot(f, self.beta) + np.dot(r, self.gamma)
+            y_ = self.regr(X) + np.dot(r, self.gamma)
 
             # Predictor
             y = (self.y_mean + self.y_std * y_).reshape(n_eval, n_targets)
@@ -472,13 +475,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             if eval_MSE:
                 rt = linalg.solve_triangular(self.C, r.T, lower=True)
 
-                if self.beta0 is None:
-                    # Universal Kriging
+                if self.regr.beta is None:
+                    # Universal / Ordinary Kriging
                     u = linalg.solve_triangular(self.G.T,
                                                 np.dot(self.Ft.T, rt) - f.T,
                                                 lower=True)
                 else:
-                    # Ordinary Kriging
+                    # simple Kriging
                     u = np.zeros((n_targets, n_eval))
 
                 MSE = np.dot(self.sigma2.reshape(n_targets, 1),
@@ -496,7 +499,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 return y, MSE
 
             else:
-
                 return y
 
         else:
@@ -567,12 +569,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def correlation_matrix(self, theta, X=None):
         D = self.D
         ij = self.ij
-
         n_samples = self.X.shape[0]
 
-        # Set up R
+        # calculate the correlation matrix R
         r = self.corr(theta, D)
-
         R = np.eye(n_samples)
         R[ij[:, 0], ij[:, 1]] = r
         R[ij[:, 1], ij[:, 0]] = r
@@ -580,13 +580,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         return R
 
     def compute_beta_gamma(self):
-        if self.beta0 is None:
-            # Universal Kriging
-            self.beta = linalg.solve_triangular(self.G, 
-                                                np.dot(self.Q.T, self.Yt))
-        else:
-            # Ordinary Kriging
-            self.beta = np.array(self.beta0)
+        if self.regr.beta is None:
+            # estimate the trend coefficients
+            self.regr.beta = linalg.solve_triangular(self.G, np.dot(self.Q.T, self.Yt))
+            
         self.gamma = linalg.solve_triangular(self.C.T, self.rho).reshape(-1, 1)
 
     def _compute_aux_var(self, R):
@@ -609,10 +606,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
     def log_likelihood_function(self, hyper_par, par_out=None, eval_grad=False):
         """
-        TODO: rewrite the documentation here
-        TODO: maybe eval_hessian in the future?...
-        This function determines the BLUP parameters and evaluates the reduced
-        likelihood function for the given autocorrelation parameters theta.
+        The concentrated log likelihood function
 
         Parameters
         ----------
@@ -752,7 +746,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     - np.sum(Rinv_upper * R_grad_upper)
 
         elif self.llf_mode == 'nugget_estim':
-            # The grad tensor of R w.r.t. theta: note that the additional v below
+            # The grad tensor of R w.r.t. theta
             R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
 
             # partial derivatives w.r.t theta's

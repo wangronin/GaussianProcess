@@ -14,16 +14,22 @@ from numpy import newaxis, zeros, tile, eye, c_, ones
 class trend(object):
     
     def __init__(self, n_feature, beta=None):
+        """
+        n_dim : the dimension of the function space of the trend function
+        """
         self.n_feature = n_feature
         self.beta = beta
-        self.n_basis = None
+        self.n_dim = None
             
     def set_beta(self, beta):
         if beta is not None:
             beta = np.atleast_1d(beta)
-            if len(beta) != self.n_basis:
+            if len(beta) != self.n_dim:
                 raise Exception('beta does not have the right size!')
         self.beta = beta
+        
+    def __str__(self):
+        return self.__class__
     
     def __call__(self, X):
         if self.beta is None:
@@ -48,6 +54,9 @@ class trend(object):
     def __eq__(self, trend_b):
         pass
     
+    def __add__(self, trend_b):
+        pass
+    
     
 class constant_trend(trend):
     """
@@ -58,7 +67,7 @@ class constant_trend(trend):
     """
     def __init__(self, n_feature, beta=None):
         super(constant_trend, self).__init__(n_feature, beta)
-        self.n_basis = n_feature
+        self.n_dim = n_feature
         
     def F(self, X):
         X = self.check_input(X)
@@ -79,7 +88,7 @@ class linear_trend(trend):
     """
     def __init__(self, n_feature, beta=None):
         super(linear_trend, self).__init__(n_feature, beta)
-        self.n_basis = n_feature + 1
+        self.n_dim = n_feature + 1
         
     def F(self, X):
         X = self.check_input(X)
@@ -102,7 +111,7 @@ class quadratic_trend(trend):
     """
     def __init__(self, n_feature, beta=None):
         super(linear_trend, self).__init__(n_feature, beta)
-        self.n_basis = (n_feature + 1) * (n_feature + 2) / 2
+        self.n_dim = (n_feature + 1) * (n_feature + 2) / 2
         
     def F(self, X):
         X = self.check_input(X)
@@ -129,7 +138,8 @@ if __name__ == '__main__':
     print T.jacobian(X)
 
 
-# legacy functions    
+# TODO: remove those functions
+# legacy functions
 def constant(x):
    
     """
