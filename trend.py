@@ -8,24 +8,31 @@ Created on Wed Aug 23 16:48:47 2017
 """
 
 import numpy as np
-from numpy import newaxis, zeros, tile, eye, c_, ones
+from numpy import newaxis, zeros, tile, eye, c_, ones, array, atleast_2d
+
+from sklearn.ensemble import RandomForestRegressor
 
 
-class trend(object):
-    
-    def __init__(self, n_feature, beta=None):
+class Trend(object):
+    pass
+
+
+class BasisExpansionTrend(Trend):
+    def __init__(self, n_feature):
         """
         n_dim : the dimension of the function space of the trend function
         """
         self.n_feature = n_feature
-        self.beta = beta
         self.n_dim = None
+        self.beta = None
             
     def set_beta(self, beta):
         if beta is not None:
-            beta = np.atleast_1d(beta)
+            if hasattr(beta, '__iter__'):
+                beta = array([beta] * self.n_dim)
+            beta = atleast_2d(beta)
             if len(beta) != self.n_dim:
-                raise Exception('beta does not have the right size!')
+                raise Exception('Shapes of beta and F do not match.')
         self.beta = beta
         
     def __str__(self):
@@ -58,7 +65,7 @@ class trend(object):
         pass
     
     
-class constant_trend(trend):
+class constant_trend(BasisExpansionTrend):
     """
     Zero order polynomial (constant, p = 1) regression model.
 
@@ -66,8 +73,9 @@ class constant_trend(trend):
     
     """
     def __init__(self, n_feature, beta=None):
-        super(constant_trend, self).__init__(n_feature, beta)
-        self.n_dim = n_feature
+        super(constant_trend, self).__init__(n_feature)
+        self.n_dim = 1
+        self.set_beta(beta)
         
     def F(self, X):
         X = self.check_input(X)
@@ -80,15 +88,16 @@ class constant_trend(trend):
         return zeros((n_eval, self.n_feature, 1))
     
     
-class linear_trend(trend):
+class linear_trend(BasisExpansionTrend):
     """
     First order polynomial (linear, p = n+1) regression model.
 
     x --> f(x) = [ 1, x_1, ..., x_n ].T
     """
     def __init__(self, n_feature, beta=None):
-        super(linear_trend, self).__init__(n_feature, beta)
+        super(linear_trend, self).__init__(n_feature)
         self.n_dim = n_feature + 1
+        self.set_beta(beta)
         
     def F(self, X):
         X = self.check_input(X)
@@ -102,7 +111,7 @@ class linear_trend(trend):
         return tile(__[newaxis, ...], (n_eval, 1, 1))
 
 
-class quadratic_trend(trend):
+class quadratic_trend(BasisExpansionTrend):
     """
     Second order polynomial (quadratic, p = n*(n-1)/2+n+1) regression model.
 
@@ -110,7 +119,8 @@ class quadratic_trend(trend):
                                                           i > j
     """
     def __init__(self, n_feature, beta=None):
-        super(linear_trend, self).__init__(n_feature, beta)
+        super(linear_trend, self).__init__(n_feature)
+        self.set_beta(beta)
         self.n_dim = (n_feature + 1) * (n_feature + 2) / 2
         
     def F(self, X):
@@ -125,10 +135,13 @@ class quadratic_trend(trend):
         raise NotImplementedError
         
         
-class nonparametric_trend(trend):
-    def __init__(self):
-        pass
-    
+class NonparametricTrend(Trend):
+    def __init__(self, X, y):
+        self.regr = RandomForestRegressor(20)
+        self.regr.fit(X, y)
+        
+    def __call__(self, X):
+        return self.regr.predict(X)
         
 if __name__ == '__main__':
     T = linear_trend(2, beta=(1, 2, 10))
