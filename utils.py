@@ -77,7 +77,7 @@ def get_design_sites(dim, n_sample, x_lb, x_ub, sampling_method='lhs'):
 
 # diagostic plots of gradient field
 def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_level=30, foo=0,
-                         f_data=None, grad_data=None,n_per_axis=200):
+                         f_data=None, grad_data=None, n_per_axis=200):
 
    fig = ax.figure
 
@@ -102,17 +102,17 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
 #       tri = mtri.Triangulation(X.flatten(), Y.flatten())
 #       ax.plot_trisurf(X.flatten(), Y.flatten(), fitness.flatten(), 
 #                       triangles=tri.triangles, cmap=plt.cm.Spectral, alpha=0.8)
-       ax.plot_surface(X, Y, fitness, rstride=1, cstride=1, cmap=plt.cm.Spectral, linewidth=0, alpha=0.5)
+       ax.plot_surface(X, Y, fitness, rstride=1, cstride=1, cmap=plt.cm.Spectral, 
+                       linewidth=0, alpha=0.5)
 #        fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
    except Exception as e:
        pdb.set_trace()
 
-   # calculate function gradients
-   x1 = np.linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
-   x2 = np.linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
-   X1, X2 = np.meshgrid(x1, x2)
-
    if grad is not None:
+       # calculate function gradients
+       x1 = np.linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
+       x2 = np.linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
+       X1, X2 = np.meshgrid(x1, x2)
        if grad_data is None:
            dx = np.array([grad(p).flatten() for p in np.c_[X1.flatten(), X2.flatten()]])
            np.save('grad.npy', dx)
@@ -137,6 +137,7 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
    ax.set_title(title)
    ax.set_xlim(x_lb[0], x_ub[0])
    ax.set_ylim(x_lb[1], x_ub[1])
+   ax.set_zlim([0, 1])
    
    
 def plot_surface_contour(ax, f, grad, x_lb, x_ub, title='f', 
