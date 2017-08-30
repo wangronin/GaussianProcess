@@ -22,8 +22,10 @@ from sklearn.utils import check_random_state, check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted
 
 from .cma_es import cma_es
-from .kernel import *
-from .trend import constant_trend, linear_trend, quadratic_trend
+from .kernel import absolute_exponential, squared_exponential, generalized_exponential, \
+    cubic, matern, pure_nugget
+    
+from .trend import BasisExpansionTrend, NonparametricTrend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -73,12 +75,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
     Parameters
     ----------
-    regr : string or callable, optional
-        A regression function returning an array of outputs of the linear
-        regression functional basis. The number of observations n_samples
+    mean : string or callable, optional
+        A meanession function returning an array of outputs of the linear
+        meanession functional basis. The number of observations n_samples
         should be greater than the size p of this basis.
-        Default assumes a simple constant regression trend.
-        Available built-in regression models are::
+        Default assumes a simple constant meanession trend.
+        Available built-in meanession models are::
 
             'constant', 'linear', 'quadratic'
 
@@ -92,9 +94,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             'generalized_exponential', 'cubic', 'linear', 'matern'
 
     beta0 : double array_like, optional
-        The regression weight vector to perform Ordinary Kriging (OK).
+        The meanession weight vector to perform Ordinary Kriging (OK).
         Default assumes Universal Kriging (UK) so that the vector beta of
-        regression weights is estimated using the maximum likelihood
+        meanession weights is estimated using the maximum likelihood
         principle.
 
     storage_mode : string, optional
@@ -193,35 +195,26 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     ----------
 
     """
-
-    _regression_types = {
-        'constant': constant_trend,
-        'linear': linear,
-        'quadratic': quadratic}
-
+    _optimizer_types = ['BFGS', 'CMA']
+    
     _correlation_types = {
         'absolute_exponential': absolute_exponential,
         'squared_exponential': squared_exponential,
         'generalized_exponential': generalized_exponential,
         'cubic': cubic,
-        'matern': matern,
-        'linear': linear}
-
-    _optimizer_types = [
-        'BFGS',
-        'CMA']
+        'matern': matern}
 
     # 10. * MACHINE_EPSILON
-    def __init__(self, regr='constant', corr='squared_exponential', beta0=None, 
+    def __init__(self, mean, corr='squared_exponential',
                  theta0=1e-1, thetaL=None, thetaU=None, sigma2=None, optimizer='BFGS', 
                  normalize=False, random_start=1, nugget=None, nugget_estim=False, 
                  wait_iter=5, eval_budget=None, random_state=None, verbose=False):
 
-        self.regr = regr
-        self.corr = corr
-        self.beta0 = beta0
+        self.mean = mean      # Prior mean function 
+        self.corr = corr      # Prior correlation function 
         self.sigma2 = sigma2
         self.verbose = verbose
+        self.corr_type = corr
         
         # hyperparameters: kernel function
         self.theta0 = np.array(theta0).flatten()
@@ -243,8 +236,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         self.noise_var = np.atleast_1d(nugget) if nugget is not None else None
         self.nugget_estim = True if nugget_estim else False
-        self.noisy = True if (self.noise_var is not None) or \
-            self.nugget_estim else False
+        self.noisy = True if (self.noise_var is not None) or self.nugget_estim else False
 
         # three cases to compute the log-likelihood function
         # TODO: verify: it seems the noisy case is the most useful one
@@ -254,7 +246,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             self.llf_mode = 'nugget_estim'
         else:
             self.llf_mode = 'noisy'
-
+        
+        self.llf_function = 'concetrated'  # or restricted
+        
+        # estimation mode for the trend
+        if isinstance(self.mean, BasisExpansionTrend):
+            self.mean_type = 'basis_expansion'
+            self.estimate_beta = True if self.mean.beta is None else False
+        elif isinstance(self.mean, NonparametricTrend):
+            self.mean_type = 'nonparametric'
+        
     def _process_data(self, X, y):
         # Force data to 2D numpy.array
         X, y = check_X_y(X, y, multi_output=True, y_numeric=True)
@@ -269,31 +270,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # Run input checks
         self._check_params(n_samples)
 
-        # Normalize data or don't
-#        if self.normalize:
-#            X_mean = np.mean(X, axis=0)
-#            X_std = np.std(X, axis=0)
-#            y_mean = np.mean(y, axis=0)
-#            y_std = np.std(y, axis=0)
-#            X_std[X_std == 0.] = 1.
-#            y_std[y_std == 0.] = 1.
-#            # center and scale X if necessary
-#            X = (X - X_mean) / X_std
-#            y = (y - y_mean) / y_std
-#        else:
-        X_mean = np.zeros(1)
-        X_std = np.ones(1)
-        y_mean = np.zeros(1)
-        y_std = np.ones(1)
-
         # Calculate matrix of distances D between samples
         D, ij = l1_cross_distances(X)
         if (np.min(np.sum(D, axis=1)) == 0. and self.corr != pure_nugget):
             raise Exception("Multiple input features cannot have the same"
                             " target value.")
 
-        # Regression matrix and parameters
-        F = self.regr.F(X)
+        # meanession matrix and parameters
+        F = self.mean.F(X)
         n_samples_F = F.shape[0]
         if F.ndim > 1:
             p = F.shape[1]
@@ -302,14 +286,11 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if n_samples_F != n_samples:
             raise Exception("Number of rows in F and X do not match. Most "
                             "likely something is going wrong with the "
-                            "regression model.")
+                            "meanession model.")
         if p > n_samples_F:
             raise Exception(("Ordinary least squares problem is undetermined "
                              "n_samples=%d must be greater than the "
-                             "regression model size p=%d.") % (n_samples, p))
-        if self.beta0 is not None:
-            if self.beta0.shape[0] != p:
-                raise Exception("Shapes of beta0 and F do not match.")
+                             "meanession model size p=%d.") % (n_samples, p))
 
         # Set attributes
         self.X = X
@@ -317,8 +298,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.D = D
         self.ij = ij
         self.F = F
-        self.X_mean, self.X_std = X_mean, X_std
-        self.y_mean, self.y_std = y_mean, y_std
 
     def fit(self, X, y):
         """
@@ -350,7 +329,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Maximum Likelihood Estimation of the parameters
             if self.verbose:
                 print ("Maximum Likelihood Estimation of the hyperparameters...")
-            self.theta_, self.log_likelihood_, par = self._arg_max_log_likelihood_function()
+            self.theta_, self.log_likelihood_, par = self._arg_max_log_likelihood_concetrated()
             
             if np.isinf(self.log_likelihood_):
                 raise Exception("Bad parameter region. Try increasing upper bound")
@@ -361,8 +340,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 
             par = {}
             self.theta_ = self.theta0
-            self.log_likelihood_ = self.log_likelihood_function(np.r_[self.theta_.flatten(), 
-                                                                      self.sigma2], par)
+            self.log_likelihood_ = self.log_likelihood_concetrated(np.r_[self.theta_.flatten(), 
+                                                                         self.sigma2], par)
             if np.isinf(self.log_likelihood_):
                 raise Exception("Bad point. Try increasing theta0.")
 
@@ -424,7 +403,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             An array with shape (n_eval, ) or (n_eval, n_targets) as with y,
             with the Mean Squared Error at x.
         """
-        check_is_fitted(self, "X")
+        assert hasattr(self, 'X')
 
         # Check input shapes
         # TODO: remove the support for multiple independent outputs
@@ -439,16 +418,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if X.shape[1] != n_features:
             raise ValueError(("The number of features in X (X.shape[1] = %d) "
                               "should match the number of features used "
-                              "for fit() "
-                              "which is %d.") % (X.shape[1], n_features))
+                              "for fit() which is %d.") % (X.shape[1], n_features))
 
         if batch_size is None:
-            # No memory management
             # (evaluates all given points in a single batch run)
-
-            # Normalize input
-#            X = (X - self.X_mean) / self.X_std
-
             # Initialize output
             y = np.zeros(n_eval)
             if eval_MSE:
@@ -457,16 +430,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Get pairwise componentwise L1-distances to the input training set
             # TODO: remove calculations of distances from here
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
-            # Get regression function and correlation
-            f = self.regr.F(X)
+            # Get meanession function and correlation
+            f = self.mean.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
-            # Scaled predictor
-#            y_ = np.dot(f, self.beta) + np.dot(r, self.gamma)
-            y_ = self.regr(X) + np.dot(r, self.gamma)
-
             # Predictor
-            y = (self.y_mean + self.y_std * y_).reshape(n_eval, n_targets)
+            y = (self.mean(X) + r.dot(self.gamma)).reshape(n_eval, n_targets)
 
             if self.y_ndim_ == 1:
                 y = y.ravel()
@@ -475,13 +444,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             if eval_MSE:
                 rt = linalg.solve_triangular(self.C, r.T, lower=True)
 
-                if self.regr.beta is None:
-                    # Universal / Ordinary Kriging
-                    u = linalg.solve_triangular(self.G.T,
-                                                np.dot(self.Ft.T, rt) - f.T,
-                                                lower=True)
-                else:
-                    # simple Kriging
+                if self.estimate_beta: # Universal / Ordinary Kriging
+                    u = linalg.solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
+                else:                  # simple Kriging
                     u = np.zeros((n_targets, n_eval))
 
                 MSE = np.dot(self.sigma2.reshape(n_targets, 1),
@@ -497,17 +462,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     MSE = MSE.ravel()
 
                 return y, MSE
-
             else:
                 return y
-
         else:
             # Memory management
             if type(batch_size) is not int or batch_size <= 0:
                 raise Exception("batch_size must be a positive integer")
 
             if eval_MSE:
-
                 y, MSE = np.zeros(n_eval), np.zeros(n_eval)
                 for k in range(max(1, n_eval / batch_size)):
                     batch_from = k * batch_size
@@ -527,7 +489,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     y[batch_from:batch_to] = \
                         self.predict(X[batch_from:batch_to],
                                      eval_MSE=eval_MSE, batch_size=None)
-
                 return y
 
     def corr_grad_theta(self, theta, X, R, nu=1.5):
@@ -580,10 +541,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         return R
 
     def compute_beta_gamma(self):
-        if self.regr.beta is None:
+        if self.estimate_beta:
             # estimate the trend coefficients
-            self.regr.beta = linalg.solve_triangular(self.G, np.dot(self.Q.T, self.Yt))
-            
+            self.mean.beta = linalg.solve_triangular(self.G, self.Q.T.dot(self.Yt))
         self.gamma = linalg.solve_triangular(self.C.T, self.rho).reshape(-1, 1)
 
     def _compute_aux_var(self, R):
@@ -595,30 +555,38 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             raise e
 
         # Get generalized least squares solution
-        Ft = linalg.solve_triangular(L, self.F, lower=True)
         Yt = linalg.solve_triangular(L, self.y, lower=True)
-
         # compute rho
-        Q, G = linalg.qr(Ft, mode='economic')
-        rho = Yt - np.dot(Q.dot(Q.T), Yt)
+        if self.estimate_beta:
+            Ft = linalg.solve_triangular(L, self.F, lower=True)
+            Q, G = linalg.qr(Ft, mode='economic')
+            rho = Yt - Q.dot(Q.T).dot(Yt)
+        else:
+            rho = Yt - linalg.solve_triangular(L, self.mean(self.X), lower=True)
+            Ft, Q, G = None, None, None
 
         return L, Ft, Yt, Q, G, rho
+    
+    def log_likelihood_restricted(self, hyper_par, par_out=None, eval_grad=False):
+        pass
 
-    def log_likelihood_function(self, hyper_par, par_out=None, eval_grad=False):
+    def log_likelihood_concetrated(self, hyper_par, par_out=None, eval_grad=False):
         """
         The concentrated log likelihood function
+        
+        Parameters concetrated out are:
+            beta : coeffiencts in the basis expansion trend function
+                replaced by the MLE estimate (GLS formula) in the likelihood 
+            sigma2 : stationary variance of the process
+                replace by the MLE estimate
 
         Parameters
         ----------
-        theta : array_like, optional
-            An array containing the autocorrelation parameters at which the
-            Gaussian Process model parameters should be determined.
-            Default uses the built-in autocorrelation parameters
-            (ie ``theta = self.theta_``).
+        theta : array or list
 
         Returns
         -------
-        log_likelihood_function_value : double
+        log_likelihood_concetrated_value : double
             The value of the reduced likelihood function associated to the
             given autocorrelation parameters theta.
 
@@ -629,7 +597,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 sigma2
                         Gaussian Process variance.
                 beta
-                        Generalized least-squares regression weights for
+                        Generalized least-squares meanession weights for
                         Universal Kriging or given beta0 for Ordinary
                         Kriging.
                 gamma
@@ -778,7 +746,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 
         return log_likelihood[0], llf_grad
 
-    def _arg_max_log_likelihood_function(self):
+    def _arg_max_log_likelihood_concetrated(self):
         """
         This function estimates the autocorrelation parameters theta as the
         maximizer of the reduced likelihood function.
@@ -843,7 +811,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if self.optimizer == 'BFGS':
             def obj_func(log10param):
                 param = 10. ** np.array(log10param)
-                __ = self.log_likelihood_function(param, eval_grad=True)
+                __ = self.log_likelihood_concetrated(param, eval_grad=True)
                 return -__[0], -__[1] * param.reshape(-1, 1)
             
             wait_count = 0  # stagnation counter
@@ -880,7 +848,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         elif self.optimizer == 'CMA':   # IPOP-CMA-ES 
             def obj_func(log10param):
                 param = 10. ** np.array(log10param)
-                __ = self.log_likelihood_function(param)
+                __ = self.log_likelihood_concetrated(param)
                 return __
             
             opt = {'sigma_init': 0.25 * np.max(log10bounds[:, 1] - log10bounds[:, 0]),
@@ -899,7 +867,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 print '{} evals, best log likekihood value: {}'.format(evalcount, -llf_opt)
                 
         optimal_param = 10. ** param_opt
-        optimal_llf_value = self.log_likelihood_function(optimal_param, optimal_par)
+        optimal_llf_value = self.log_likelihood_concetrated(optimal_param, optimal_par)
 
         if self.llf_mode in ['nugget_estim', 'noisy']:
             optimal_theta = optimal_param[:-1]
@@ -910,21 +878,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
     def _check_params(self, n_samples=None):
 
-        # Check regression model
-#        if not callable(self.regr):
-#            if self.regr in self._regression_types:
-#                self.regr = self._regression_types[self.regr]
+        # Check meanession model
+#        if not callable(self.mean):
+#            if self.mean in self._meanession_types:
+#                self.mean = self._meanession_types[self.mean]
 #            else:
-#                raise ValueError("regr should be one of %s or callable, "
+#                raise ValueError("mean should be one of %s or callable, "
 #                                 "%s was given."
-#                                 % (self._regression_types.keys(), self.regr))
-
-        # Check regression weights if given (Ordinary Kriging)
-        if self.beta0 is not None:
-            self.beta0 = np.atleast_2d(self.beta0)
-            if self.beta0.shape[1] != 1:
-                # Force to column vector
-                self.beta0 = self.beta0.T
+#                                 % (self._meanession_types.keys(), self.mean))
 
         # Check correlation model
         if not callable(self.corr):
