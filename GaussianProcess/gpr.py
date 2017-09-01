@@ -900,7 +900,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         eval_budget = 200 * n_par if self.eval_budget is None else self.eval_budget
         llf_opt = np.inf
             
-        # a restarting L-BFGS method based on analytical gradient
+        # restarting L-BFGS method based on analytical gradient
         # TODO: maybe adopt an ILS-like restarting heuristic?
         if self.optimizer == 'BFGS':
             def obj_func(log10param):
@@ -980,15 +980,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         return optimal_theta, optimal_llf_value, optimal_par
 
     def _check_params(self, n_samples=None):
-
-        # Check meanession model
-        # if not callable(self.mean):
-        #     if self.mean in self._meanession_types:
-        #         self.mean = self._meanession_types[self.mean]
-        #     else:
-        #         raise ValueError("mean should be one of %s or callable, "
-        #                          "%s was given."
-        #                          % (self._meanession_types.keys(), self.mean))
 
         # Check correlation model
         if not callable(self.corr):
