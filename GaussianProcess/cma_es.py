@@ -5,9 +5,8 @@ Created on Tue Jan 29 11:26:41 2013
 @author: wangronin
 """
 
-import pdb
 import numpy as np
-#import hello as h
+# import hello as h
 from .boundary_handling import boundary_handling
 from scipy.stats import chi
 from .function import rand_orth_mat
@@ -25,7 +24,8 @@ sum = np.sum
 norm = np.linalg.norm
 any = np.any
 all = np.all
-#pairwise_selection = h.pairwise_selection
+# pairwise_selection = h.pairwise_selection
+
 
 # TODO: modularize this function, and possiblly fit it into a optimizer class
 class cma_es(object):
@@ -55,8 +55,7 @@ class cma_es(object):
             self.restart = restart
             self.restart_count = 0
             self.inc_popsize = 2
-            self.restart_budget = opts['restart_budget']  if opts.has_key('restart_budget') \
-                else int(30)
+            self.restart_budget = opts['restart_budget'] if 'restart_budget' in opts else int(20)
 
         # Initialize internal strategy parameters
         self.wcm = eval(init_wcm) if isinstance(init_wcm, basestring) else init_wcm
@@ -70,11 +69,11 @@ class cma_es(object):
         if self.ub.shape[1] != 1:
             self.ub = self.ub.T 
             
-        self.eval_budget = int(eval(opts['eval_budget'])) if isinstance(opts['eval_budget'], basestring) \
-            else int(opts['eval_budget'])
+        self.eval_budget = int(eval(opts['eval_budget'])) if isinstance(opts['eval_budget'],
+                                                                        basestring) \
+                                                          else int(opts['eval_budget'])
 
         self.wcm = self.wcm.reshape(-1, 1)
-
         self.dim = dim
         self.sigma0 = opts['sigma_init']
         self.sigma = self.sigma0
@@ -124,17 +123,20 @@ class cma_es(object):
         if opts.has_key('damps'):
             self.damps = opts['damps']
         else:
-
             # TODO: Parameter setting for mirrored orthogonal sampling
             # damps tuning for mirrored orthogonal sampling
             if self.sampling_method == 1:
                 self.damps = 1.032 - 0.7821*self.mueff/self._lambda + self.cs
 
             if self.sampling_method == 4 or self.sampling_method == 8:
-                # damps setting for small _lambda
-                self.damps = 1.49 - 0.6314*(sqrt((self.mueff+.1572)/(self.dim+1.647))+.869) + self.cs
-                # damps setting for large _lambda
-    #            damps = 1.17 + 4.625*mueff/_lambda - 2.704*cs
+                if 1 < 2:
+                    # damps setting for small _lambda
+                    self.damps = -0.6314*(sqrt((self.mueff + .1572) / (self.dim + 1.647)) +.869) + \
+                                 self.cs + 1.49
+                else:
+                    # damps setting for large _lambda
+                    self.damps = 1.17 + 4.625 * self.mueff / self._lambda - 2.704 * self.cs
+                    
             # Optimal damps setting for mirrored orthogonal sampling
             if self.sampling_method == 7:
                 self.damps *= .3
@@ -181,8 +183,7 @@ class cma_es(object):
 
         # Mirroring
         mode = self.sampling_method
-        dim, _lambda, sigma, evalcount, scale, aux = self.dim, self._lambda, self.sigma, self.evalcount, \
-            self.scale, self.aux
+        dim, _lambda, sigma, evalcount, scale, aux = self.dim, self._lambda, self.sigma, self.evalcount, self.scale, self.aux
 
         if mode == 1 or mode == 11:
             if mod(evalcount+_lambda, 2) != 0:
@@ -309,24 +310,21 @@ class cma_es(object):
             z = randn(dim, _lambda)
 
         self.z = z
-        self.offspring = add(self.wcm, sigma * dot(self.e_vector, self.e_value*self.z))
+        self.offspring = add(self.wcm, sigma * self.e_vector.dot(self.e_value * self.z))
 
     def constraint_handling(self):
-        #------------------------- Boundary handling -------------------------------
         self.offspring = boundary_handling(self.offspring, self.lb, self.ub)
 
     def evaluation(self):
-        #---------------------------- Evaluation -----------------------------------
         try:
             self.fitness = self.fitnessfunc(self.offspring)
-        except Exception: # if the fitness function evaluates a single point each time
+        except Exception:  # if the fitness function evaluates a single point each time
             self.fitness = np.array([self.fitnessfunc(_) for _ in self.offspring.T])
         self.evalcount += self._lambda
         self.fitness_rank = argsort(self.fitness)
         self.fitness_true = self.fitness * (-1) ** (~self.is_minimize)
 
     def update(self):
-        #-------------------------- Adaptation Mechanism ---------------------------
         # Cumulation: Update evolution paths
         cc, cs, c_1, c_mu = self.cc, self.cs, self.c_1, self.c_mu
         wcm, wcm_old, mueff, invsqrt_C = self.wcm, self.wcm_old, self.mueff, self.invsqrt_C
@@ -345,8 +343,10 @@ class cma_es(object):
             + c_mu * dot(offset, self.weights*offset.T)
         # Adapt step size sigma
         self.sigma = self.sigma * exp((norm(self.ps)/self.chiN - 1) * self.cs/self.damps)
+        
         if 11 < 3: # TODO: Saw in the Hansen's codde, reason for this...
-            self.sigma = self.sigma * exp(min([1, (norm(self.ps)/self.chiN - 1) * self.cs/self.damps]))
+            self.sigma = self.sigma * exp(min([1, (norm(self.ps)/self.chiN - 1) * \
+                self.cs/self.damps]))
 
     def updateBD(self):
         # Eigen decomposition
@@ -389,7 +389,6 @@ class cma_es(object):
             self.hist_xbest[evalcount-_lambda:evalcount, :] = offspring[:, self.sel[0]]
             self.hist_fbest[evalcount-_lambda:evalcount] = fitness[self.sel[0]]
 
-
     def check_stop_criteria(self):
         #-------------------------- Restart criterion ------------------------------
         is_stop_on_warning = self.is_stop_on_warning
@@ -400,7 +399,6 @@ class cma_es(object):
         self.stop_dict['maxfevals'] = True if self.evalcount >= self.eval_budget else False
 
         if self.evalcount != 0:
-
             if np.any(fitness == inf) or np.any(fitness == np.nan):
                 # TODO: nasty error to be debugged
                 raise Exception('Somthing is wrong!')
@@ -445,7 +443,7 @@ class cma_es(object):
                 if is_stop_on_warning:
                      self.stop_dict['noeffectaxis'] = True
                 else:
-                    sigma *= exp(0.2+self.cs/self.damps)
+                    sigma *= exp(0.2 + self.cs / self.damps)
 
             # No effective coordinate
             if any(0.2*sigma*sqrt(diagC) + self.wcm == self.wcm):
@@ -456,7 +454,8 @@ class cma_es(object):
                         (self.wcm == self.wcm + 0.2*sigma*sqrt(diagC)))
                     sigma *= exp(0.05 + self.cs/self.damps)
             # Adjust step size in case of equal function values
-            if fitness[self.sel[0]] == fitness[self.sel[int(min([ceil(0.1+_lambda/4.0), self._mu-1]))]]:
+            if fitness[self.sel[0]] == fitness[self.sel[int(min([ceil(0.1+_lambda/4.0), 
+                                               self._mu-1]))]]:
                 if is_stop_on_warning:
                     self.stop_dict['flatfitness'] = True
                 else:
@@ -481,11 +480,9 @@ class cma_es(object):
             self.stop_dict[key] = False
 
     def optimize(self):
-
         # TODO: use IPOP for now, to implement BIPOP method
         while self.restart_count < self.restart_budget:
             while True:
-
                 self.info_register()
                 self.mutation()
                 self.constraint_handling()

@@ -974,7 +974,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def correlation_matrix(self, theta, X=None):
         D = self.D
         ij = self.ij
-
         n_samples = self.X.shape[0]
 
         # Set up R

@@ -119,7 +119,7 @@ class quadratic_trend(BasisExpansionTrend):
                                                           i > j
     """
     def __init__(self, n_feature, beta=None):
-        super(linear_trend, self).__init__(n_feature)
+        super(quadratic_trend, self).__init__(n_feature)
         self.set_beta(beta)
         self.n_dim = (n_feature + 1) * (n_feature + 2) / 2
         

@@ -93,7 +93,7 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
    else:
        fitness = f_data
    try:
-       fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
+#       fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
        if is_log:
            fitness = np.log(fitness)
        CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1, offset=0)
@@ -137,7 +137,7 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
    ax.set_title(title)
    ax.set_xlim(x_lb[0], x_ub[0])
    ax.set_ylim(x_lb[1], x_ub[1])
-   ax.set_zlim([0, 1])
+   ax.set_zlim([np.min(fitness), np.max(fitness)])
    
    
 def plot_surface_contour(ax, f, grad, x_lb, x_ub, title='f', 

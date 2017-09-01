@@ -9,8 +9,6 @@ Created on Wed Dec 16 16:34:04 2015
 @author: wangronin
 """
 
-import pdb
-
 import numpy as np
 from numpy import dot, sqrt, array, zeros, ones, exp
 
@@ -26,19 +24,18 @@ import warnings
 MACHINE_EPSILON = np.finfo(np.double).eps
 from .gpr import GaussianProcess
 
+
 class GaussianProcess_extra(GaussianProcess):
 
     def __init__(self, regr='constant', corr='squared_exponential',
-                 beta0=None, verbose=False,
-                 theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
-                 optimizer='BFGS', random_start=10, normalize=False, wait_iter=5,
-                 eval_budget=None,
-                 nugget=10. * MACHINE_EPSILON, nugget_estim=False, random_state=None):
+                 beta0=None, verbose=False, theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
+                 optimizer='BFGS', random_start=10, wait_iter=5, likelihood='restricted',
+                 eval_budget=None, nugget=10. * MACHINE_EPSILON, nugget_estim=False, 
+                 random_state=None):
 
-        super(GaussianProcess_extra, self).__init__(regr=regr,
-                 corr=corr, beta0=beta0,
+        super(GaussianProcess_extra, self).__init__(regr=regr, corr=corr, beta0=beta0,
                  verbose=verbose, theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-                 optimizer=optimizer, random_start=random_start, normalize=normalize,
+                 optimizer=optimizer, random_start=random_start, likelihood=likelihood,
                  nugget=nugget, nugget_estim=nugget_estim, wait_iter=wait_iter, 
                  eval_budget=eval_budget, random_state=random_state)
 
@@ -181,9 +178,8 @@ class GaussianProcess_extra(GaussianProcess):
 
         return grad
 
-
     def prior_cov_matrix(self, X, corr=False, normalize=False):
-         # Check input shapes
+        # Check input shapes
         X = np.atleast_2d(X)
 
         n_eval, _ = X.shape
@@ -205,7 +201,6 @@ class GaussianProcess_extra(GaussianProcess):
         # Do not miss the error/noise term: self.nugget
         R_prior = self.corr(self.theta_, dx_new).reshape(n_eval, n_eval)
 
-
         if correlation:
             return R_prior
 
@@ -215,7 +210,6 @@ class GaussianProcess_extra(GaussianProcess):
                 np.diag(self.nugget * ones(n_eval))
 
             return C_prior
-
 
     def prior_cov_Mat1Mat2(self, X1, X2, corr=False, normalize=False):
         # Check input shapes
@@ -253,7 +247,6 @@ class GaussianProcess_extra(GaussianProcess):
         # TODO: 
         # create the posterior kernel function
         return None
-
 
     def predict(self, X, eval_MSE=False, eval_cov=False, batch_size=None):
         """
@@ -513,4 +506,3 @@ if __name__ == '__main__':
 
 
     plt.show()
-
