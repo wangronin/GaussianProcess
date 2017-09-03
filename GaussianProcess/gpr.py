@@ -323,7 +323,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Maximum Likelihood Estimation of the parameters
             if self.verbose:
                 print ("Maximum Likelihood Estimation of the hyperparameters...")
-            self.theta_, self.log_likelihood_, par = self._arg_max_log_likelihood_concentrated()
+            self.theta_, self.log_likelihood_, par = self._optimize_hyperparameter()
             
             if np.isinf(self.log_likelihood_):
                 raise Exception("Bad parameter region. Try increasing upper bound")
@@ -561,6 +561,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         return L, Ft, Yt, Q, G, rho
     
     def log_likelihood_restricted(self, par, env=None, eval_grad=False):
+        """
+        The restricted log likelihood function
+        It yields the unbiased estimation for the hyperparameters 
+        """
         check_is_fitted(self, "X")
         
         n_samples, n_features = self.X.shape
@@ -586,7 +590,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         try:
             L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
         except linalg.LinAlgError as e:
-            warnings.warn("linear algebra failed {}".format(e))
+            warnings.warn("linear operation failed on {}".format(e))
         
         if self.estimate_trend: 
             p = Ft.shape[1]
@@ -650,45 +654,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         else:
             return log_likelihood
 
-    def log_likelihood_concentrated(self, hyper_par, env=None, eval_grad=False):
+    def log_likelihood_concentrated(self, par, env=None, eval_grad=False):
         """
         The concentrated log likelihood function
-        TODO: the MLE estiation on sigma2 is biased downwards: \hat{sigma2} < sigma2
+        The MLE estiation on sigma2 is biased downwards: \hat{sigma2} < sigma2
         
         Parameters concetrated out are:
             beta : coeffiencts in the basis expansion trend function
                 replaced by the MLE estimate (GLS formula) in the likelihood 
             sigma2 : stationary variance of the process
                 replace by the MLE estimate
-
-        Parameters
-        ----------
-        theta : array or list
-
-        Returns
-        -------
-        log_likelihood_concentrated_value : double
-            The value of the reduced likelihood function associated to the
-            given autocorrelation parameters theta.
-
-        par : dict
-            A dictionary containing the requested Gaussian Process model
-            parameters:
-
-                sigma2
-                        Gaussian Process variance.
-                beta
-                        Generalized least-squares meanession weights for
-                        Universal Kriging or given beta0 for Ordinary
-                        Kriging.
-                gamma
-                        Gaussian Process weights.
-                C
-                        Cholesky decomposition of the correlation matrix [R].
-                Ft
-                        Solution of the linear equation system : [R] x Ft = F
-                G
-                        QR decomposition of the matrix Ft.
         """
         check_is_fitted(self, "X")
 
@@ -697,10 +672,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Retrieve data
         n_samples, n_features = self.X.shape
-        n_par = len(hyper_par)
+        n_par = len(par)
 
         if self.llf_mode == 'noiseless':
-            theta = hyper_par
+            theta = par
             noise_var = 0
 
             R0 = self.correlation_matrix(theta)
@@ -721,7 +696,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                      2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.llf_mode == 'noise_estim':
-            theta, alpha = hyper_par[:-1], hyper_par[-1]
+            theta, alpha = par[:-1], par[-1]
             R0 = self.correlation_matrix(theta)
             R = alpha * R0 + (1 - alpha) * np.eye(n_samples)
 
@@ -739,7 +714,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                      2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.llf_mode == 'noisy':
-            theta, sigma2 = hyper_par[:-1], hyper_par[-1]
+            theta, sigma2 = par[:-1], par[-1]
             noise_var = self.noise_var
             sigma2_total = sigma2 + noise_var
 
@@ -831,24 +806,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 
         return log_likelihood[0], llf_grad
 
-    def _arg_max_log_likelihood_concentrated(self):
+    def _optimize_hyperparameter(self):
         """
-        This function estimates the autocorrelation parameters theta as the
-        maximizer of the reduced likelihood function.
-        (Minimization of the opposite reduced likelihood function is used for
-        infoenience)
-
-        Returns
+        optimization procedure to determine the hyperparameter:
+            theta: corralation length
+            sigma2: process variance for stationary GP
+            noise_var: the variance(s) of the noise process
         -------
-        optimal_theta : array_like
-            The best set of autocorrelation parameters (the sought maximizer of
-            the reduced likelihood function).
-
-        optimal_reduced_likelihood_function_value : double
-            The optimal reduced likelihood function value.
-
-        optimal_par : dict
-            The BLUP parameters associated to thetaOpt.
         """
 
         if self.verbose:
@@ -859,20 +823,19 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 print "{} random restarts are specified.".format(self.random_start)
                       
         # setup the log10 search bounds
+        # TODO: better estimation the upper and lowe bound of sigma2
         bounds = np.c_[self.thetaL, self.thetaU]
         if self.llf_mode == 'noise_estim' and self.likelihood == 'concentrated':
             alpha_bound = np.atleast_2d([1e-10, 1.0 - 1e-10])
             bounds = np.r_[bounds, alpha_bound]
             
         elif self.llf_mode == 'noisy':
-            # TODO: better estimation the upper and lowe bound of sigma2
             # TODO: implement optimization for the heterogenous case
-            sigma2_upper = self.y.std() ** 2. - self.noise_var
+            sigma2_upper = self.y.std() ** 2 - self.noise_var
             sigma2_bound = np.atleast_2d([1e-5, sigma2_upper])
             bounds = np.r_[bounds, sigma2_bound]
 
         elif self.llf_mode == 'noiseless' and self.likelihood == 'restricted':
-            # TODO: better estimation the upper and lowe bound of sigma2
             # TODO: implement optimization for the heterogenous case
             sigma2_upper = self.y.std() ** 2
             sigma2_bound = np.atleast_2d([1e-5, sigma2_upper])
@@ -899,23 +862,27 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # TODO: how to set this properly?
         eval_budget = 200 * n_par if self.eval_budget is None else self.eval_budget
         llf_opt = np.inf
-            
-        # restarting L-BFGS method based on analytical gradient
-        # TODO: maybe adopt an ILS-like restarting heuristic?
-        if self.optimizer == 'BFGS':
-            def obj_func(log10param):
+        
+        def _obj_func(eval_grad=False):
+            def func(log10param):
                 param = 10. ** np.array(log10param)
                 if self.likelihood == 'concentrated':
-                    __ = self.log_likelihood_concentrated(param, eval_grad=True)
+                    __ = self.log_likelihood_concentrated(param, eval_grad=eval_grad)
                 elif self.likelihood == 'restricted':
-                    __ = self.log_likelihood_restricted(param, eval_grad=True)
-                return -__[0], -__[1] * param.reshape(-1, 1)
-            
+                    __ = self.log_likelihood_restricted(param, eval_grad=eval_grad)
+                return tuple(-_ for _ in tuple(__))
+            return func
+        
+        # restarting L-BFGS method based on analytical gradient
+        # TODO: maybe adopt an ILS-like restarting heuristic?
+        if self.optimizer == 'BFGS':            
+            obj_func = _obj_func(eval_grad=True)
             wait_count = 0  # stagnation counter
             for iteration in range(self.random_start):
                 if iteration != 0:
                     log10param = np.random.uniform(log10bounds[:, 0], log10bounds[:, 1])
-
+                
+                # TODO: may be expose the parameter of fmin_l_bfgs_b to the user
                 param_opt_, llf_opt_, info = fmin_l_bfgs_b(obj_func, log10param, 
                                                            bounds=log10bounds,
                                                            maxfun=eval_budget)
@@ -941,16 +908,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 eval_budget -= info['funcalls']
                 if eval_budget <= 0 or wait_count >= self.wait_iter:
                     break
-                
+        # TODO: perphas BIPOP-CMA-ES in the further      
         elif self.optimizer == 'CMA':   # IPOP-CMA-ES 
-            def obj_func(log10param):
-                param = 10. ** np.array(log10param)
-                if self.likelihood == 'concentrated':
-                    __ = self.log_likelihood_concentrated(param)
-                elif self.likelihood == 'restricted':
-                    __ = self.log_likelihood_restricted(param)
-                return __
-            
+            obj_func = _obj_func()
             opt = {'sigma_init': 0.25 * np.max(log10bounds[:, 1] - log10bounds[:, 0]),
                    'eval_budget': eval_budget,
                    'f_target': np.inf,
