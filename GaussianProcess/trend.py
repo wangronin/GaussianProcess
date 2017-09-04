@@ -27,10 +27,12 @@ class BasisExpansionTrend(Trend):
         self.beta = None
             
     def set_beta(self, beta):
+#        import pdb
+#        pdb.set_trace()
         if beta is not None:
-            if hasattr(beta, '__iter__'):
+            if not hasattr(beta, '__iter__'):
                 beta = array([beta] * self.n_dim)
-            beta = atleast_2d(beta)
+            beta = atleast_2d(beta).reshape(-1, 1)
             if len(beta) != self.n_dim:
                 raise Exception('Shapes of beta and F do not match.')
         self.beta = beta
@@ -146,7 +148,7 @@ class NonparametricTrend(Trend):
 if __name__ == '__main__':
     T = linear_trend(2, beta=(1, 2, 10))
     
-    X = np.random.randn(1, 2)
+    X = np.random.randn(5, 2)
     print T(X)
     print T.jacobian(X)
 
