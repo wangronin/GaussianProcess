@@ -96,7 +96,8 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
 #       fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
        if is_log:
            fitness = np.log(fitness)
-       CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1, offset=0)
+       min_ = np.min(fitness)
+       CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1, offset=min_)
        plt.clabel(CS, inline=1, fontsize=15)
        
 #       tri = mtri.Triangulation(X.flatten(), Y.flatten())

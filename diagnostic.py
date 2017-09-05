@@ -37,9 +37,8 @@ def fitness(X):
     # y = np.sum(X ** 2., axis=1) + 1e-1 *  np.random.randn(X.shape[0])
     # return y
     X = np.atleast_2d(X)
-    return np.array([benchmarks.rastrigin(x)[0] for x in X]) \
+    return np.array([benchmarks.schwefel(x)[0] for x in X]) \
         + np.sqrt(noise_var) * randn(X.shape[0])
-
 
 dim = 2
 n_init_sample = 500
@@ -63,7 +62,7 @@ thetaU = 10 * (x_ub - x_lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 if 1 < 2:
-    mean = linear_trend(dim, beta=None)
+    mean = constant_trend(dim, beta=0)
     model = GaussianProcess(mean=mean, 
                             corr='matern',
                             theta0=theta0,
