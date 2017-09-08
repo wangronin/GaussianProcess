@@ -25,10 +25,8 @@ class BasisExpansionTrend(Trend):
         self.n_feature = n_feature
         self.n_dim = None
         self.beta = None
-            
+
     def set_beta(self, beta):
-#        import pdb
-#        pdb.set_trace()
         if beta is not None:
             if not hasattr(beta, '__iter__'):
                 beta = array([beta] * self.n_dim)
@@ -36,18 +34,18 @@ class BasisExpansionTrend(Trend):
             if len(beta) != self.n_dim:
                 raise Exception('Shapes of beta and F do not match.')
         self.beta = beta
-        
+
     def __str__(self):
         return self.__class__
-    
+
     def __call__(self, X):
         if self.beta is None:
             raise Exception('beta is not set!')
         return self.F(X).dot(self.beta)
-    
+
     def F(self, X):
         raise NotImplementedError
-    
+
     def check_input(self, X):
         # Check input shapes
         X = np.atleast_2d(X)
@@ -56,40 +54,40 @@ class BasisExpansionTrend(Trend):
         if X.shape[1] != self.n_feature:
             raise Exception('x does not have the right size!')
         return X
-        
+
     def jacobian(self, X):
-        raise NotImplementedError        
-    
+        raise NotImplementedError
+
     def __eq__(self, trend_b):
         pass
-    
+
     def __add__(self, trend_b):
         pass
-    
-    
+
+
 class constant_trend(BasisExpansionTrend):
     """
     Zero order polynomial (constant, p = 1) regression model.
 
     x --> f(x) = 1
-    
+
     """
     def __init__(self, n_feature, beta=None):
         super(constant_trend, self).__init__(n_feature)
         self.n_dim = 1
         self.set_beta(beta)
-        
+
     def F(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         return ones((n_eval, 1))
-    
+
     def jacobian(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         return zeros((n_eval, self.n_feature, 1))
-    
-    
+
+
 class linear_trend(BasisExpansionTrend):
     """
     First order polynomial (linear, p = n+1) regression model.
@@ -100,12 +98,12 @@ class linear_trend(BasisExpansionTrend):
         super(linear_trend, self).__init__(n_feature)
         self.n_dim = n_feature + 1
         self.set_beta(beta)
-        
+
     def F(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         return c_[ones(n_eval), X]
-    
+
     def jacobian(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
@@ -124,7 +122,7 @@ class quadratic_trend(BasisExpansionTrend):
         super(quadratic_trend, self).__init__(n_feature)
         self.set_beta(beta)
         self.n_dim = (n_feature + 1) * (n_feature + 2) / 2
-        
+
     def F(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
@@ -132,22 +130,22 @@ class quadratic_trend(BasisExpansionTrend):
         for k in range(self.n_feature):
             f = c_[f, X[:, k, np.newaxis] * X[:, k:]]
         return f
-    
+
     def jacobian(self, X):
         raise NotImplementedError
-        
-        
+
+
 class NonparametricTrend(Trend):
     def __init__(self, X, y):
         self.regr = RandomForestRegressor(20)
         self.regr.fit(X, y)
-        
+
     def __call__(self, X):
         return self.regr.predict(X)
-        
+
 if __name__ == '__main__':
     T = linear_trend(2, beta=(1, 2, 10))
-    
+
     X = np.random.randn(5, 2)
     print T(X)
     print T.jacobian(X)
@@ -156,7 +154,7 @@ if __name__ == '__main__':
 # TODO: remove those functions
 # legacy functions
 def constant(x):
-   
+
     """
     Parameters
     ----------
