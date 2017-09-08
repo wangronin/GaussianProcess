@@ -61,7 +61,7 @@ thetaU = 10 * (x_ub - x_lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 if 1 < 2:
-    mean = constant_trend(dim, beta=0)
+    mean = linear_trend(dim, beta=None)
     model = GaussianProcess(mean=mean,
                             corr='matern',
                             theta0=theta0,
@@ -73,7 +73,7 @@ if 1 < 2:
                             verbose=True,
                             wait_iter=3,
                             random_start=30,
-                            likelihood='concentrated',
+                            likelihood='restricted',
                             eval_budget=1e3)
 
     # from GaussianProcess import OWCK
