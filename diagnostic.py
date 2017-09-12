@@ -109,6 +109,7 @@ y_hat = model.predict(X_test)
 r2 = r2_score(y_test, y_hat)
 f = lambda x: model.predict(x)
 
+print
 print 'R2:', r2
 print 'Homoscedastic noise variance:', noise_var
 print 'noise variance learned:', model.noise_var
