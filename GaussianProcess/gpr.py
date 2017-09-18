@@ -29,7 +29,6 @@ from .trend import BasisExpansionTrend, NonparametricTrend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
-
 def l1_cross_distances(X):
     """
     Computes the nonzero componentwise L1 cross-distances between the vectors
@@ -66,6 +65,14 @@ def l1_cross_distances(X):
 
     return D, ij
 
+def my_dot(x, y):
+    n_row = x.shape[0]
+    n_col = y.shape[1]
+    res = np.zeros((n_row, n_col))
+    for i in range(n_row):
+        for j in range(n_col):
+            res[i, j] = np.sum(x[i, :] * y[:, j])
+    return res
 
 # TODO: remove the dependences from sklearn
 class GaussianProcess(BaseEstimator, RegressorMixin):
@@ -276,6 +283,44 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                  "n_samples=%d must be greater than the "
                                  "meanession model size p=%d.") % (n_samples, p))
             self.F = F
+    
+    def sampling_prior(self, n=1):
+        pass
+    
+    def sampling_posterior(self, n=1):
+        pass
+    
+    def prior_cov(self, X1, X2=None, corr=False):
+        # Check input shapes
+        X1 = np.atleast_2d(X1)
+        X2 = np.atleast_2d(X2) if X2 else X1
+
+        n_eval_X1, _ = X1.shape
+        n_eval_X2, _ = X2.shape
+        n_samples, n_features = self.X.shape
+        n_samples_y, n_targets = self.y.shape
+
+        if X1.shape[1] != n_features or X2.shape[1] != n_features:
+            raise ValueError(("The number of features in X (X.shape[1] = %d) "
+                              "should match the number of features used "
+                              "for fit() "
+                              "which is %d.") % (X1.shape[1], n_features))
+
+        # remember to normalize the inputs
+        # if normalize:
+            # X1 = (X1 - self.X_mean) / self.X_std
+            # X2 = (X2 - self.X_mean) / self.X_std
+
+        dx_new = manhattan_distances(X1, Y=X2, sum_over_features=False)
+        R_prior = self.corr(self.theta_, dx_new).reshape(n_eval_X1, n_eval_X2)
+
+        if corr:
+            return R_prior
+        else:
+            C_prior = array([self.sigma2[i] * R_prior for i in range(n_targets)])
+            C_prior = sqrt((C_prior ** 2.).sum(axis=0) / n_targets)
+
+            return C_prior
 
     def fit(self, X, y):
         """
@@ -298,7 +343,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             predictions.
         """
         # Run input checks
-#        self._check_params()
         self.random_state = check_random_state(self.random_state)
         self._check_data(X, y)
 
@@ -311,22 +355,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             
             if np.isinf(self.log_likelihood_):
                 raise Exception("Bad parameter region. Try increasing upper bound")
-        # TODO: remove this part, it should be in the optimization module
-#        else:
-#            # Given parameters
-#            if self.verbose:
-#                print "Given hyperparameters"
-#                
-#            par = {}
-#            self.theta_ = self.theta0
-#            self.log_likelihood_ = self.log_likelihood_concentrated(np.r_[self.theta_.flatten(), 
-#                                                                          self.sigma2], par)
-#            if np.isinf(self.log_likelihood_):
-#                raise Exception("Bad point. Try increasing theta0.")
 
         # find a better name for noise_var
         self.theta_ = self.par['theta']
-        
         self.noise_var = env['noise_var']
         self.sigma2 = env['sigma2']
         self.rho = env['rho'] 
@@ -410,20 +441,17 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # TODO: remove calculations of distances from here
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get meanession function and correlation
-            f = self.mean.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             # Predictor
-            y = (self.mean(X) + r.dot(self.gamma)).reshape(n_eval, n_targets)
+            y = (self.mean(X) + my_dot(r, self.gamma)).reshape(n_eval, n_targets)
             
-#            if self.y_ndim_ == 1:
-#                y = y.ravel()
-
             # Mean Squared Error
             if eval_MSE:
                 rt = linalg.solve_triangular(self.C, r.T, lower=True)
 
                 if self.estimate_trend:  # Universal / Ordinary Kriging
+                    f = self.mean.F(X)
                     u = linalg.solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
                 else:                  # simple Kriging
                     u = np.zeros((n_targets, n_eval))
@@ -436,9 +464,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 # Mean Squared Error might be slightly negative depending on
                 # machine precision: force to zero!
                 MSE[MSE < 0.] = 0.
-
-                if self.y_ndim_ == 1:
-                    MSE = MSE.ravel()
+                # MSE = MSE.ravel()
 
                 return y, MSE
             else:
@@ -470,6 +496,115 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                      eval_MSE=eval_MSE, batch_size=None)
                 return y
 
+    def gradient(self, x):
+        """
+        Calculate the gradient of the posterior mean and variance
+        Note that the nugget effect will not the change the computation below
+        """
+
+        check_is_fitted(self, 'X')
+
+        # Check input shapes
+        x = np.atleast_2d(x)
+        n_eval, _ = x.shape
+        n_samples, n_features = self.X.shape
+
+        if _ != n_features:
+            raise Exception('x does not have the right size!')
+
+        if n_eval != 1:
+            raise Exception('x must be a vector!')
+
+        # trend and its Jacobian
+        f = self.mean.F(x)
+        f_dx = self.mean.Jacobian(x)
+
+        # correlation and its Jacobian
+        d = manhattan_distances(x, Y=self.X, sum_over_features=False)
+        r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
+        r_dx = self.corr_dx(x, X=self.X, r=r)
+
+        # gradient of the posterior mean
+        y_dx = dot(f_dx, self.beta) + my_dot(r_dx, self.gamma)
+
+        # auxiliary variable: rt = C^-1 * r
+        rt = solve_triangular(self.C, r.T, lower=True)
+        rt_dx = solve_triangular(self.C, r_dx.T, lower=True).T
+
+        # auxiliary variable: u = Ft^T * rt - f
+        u = dot(self.Ft.T, rt) - f
+        u_dx = dot(rt_dx, self.Ft) - f_dx
+
+        mse_dx = -dot(rt_dx, rt)      # for Simple Kriging
+        if self.beta0 is None:        # for Universal Kriging
+            Ft2inv = inv(dot(self.Ft.T, self.Ft))
+            mse_dx += dot(u_dx, Ft2inv).dot(u)
+
+        mse_dx = 2.0 * self.sigma2 * mse_dx
+        return y_dx, mse_dx
+    
+    # TODOL corr_dx, corr_grad_theta should go to kernel package
+    def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
+        # Check input shapes
+        x = np.atleast_2d(x)
+        n_eval, _ = x.shape
+        n_samples, n_features = self.X.shape
+
+        if _ != n_features:
+            raise Exception('x does not have the right sizeh!')
+
+        if n_eval != 1:
+            raise Exception('x must be a vector!')
+
+        if self.theta_ is None:
+            raise Exception('The model is not fitted yet!')
+
+        X = np.atleast_2d(X)
+        if X is None:
+            X = self.X
+
+        diff = (x - X).T
+
+        if theta is None:
+            theta = self.theta_
+
+        # calculate the required variables if not given
+        if r is None:
+            r = self.corr(self.theta_, np.abs(diff).T)
+
+        theta = theta.reshape(-1, 1)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                if self.corr_type == 'squared_exponential':
+                    grad = -2 * r * (theta * diff)
+
+                elif self.corr_type == 'matern':
+                    c = np.sqrt(3)
+                    D = np.sqrt(np.sum(theta * diff ** 2., axis=0))
+
+                    if nu == 0.5:
+                        grad = - diff * theta / D * r
+                    elif nu == 1.5:
+                        grad = diff * theta / D
+                        grad *= -3. * D * exp(-c * D)
+                    elif nu == 2.5:
+                        pass
+
+                elif self.corr_type == 'absolute_exponential':
+                    grad = -r * theta * np.sign(diff)
+                elif self.corr_type == 'generalized_exponential':
+                    pass
+                elif self.corr_type == 'cubic':
+                    pass
+                elif self.corr_type == 'linear':
+                    pass
+            except Warning:
+                grad = np.zeros((n_features, n_samples))
+
+        return grad
+    
     def corr_grad_theta(self, theta, X, R, nu=1.5):
         # Check input shapes
         X = np.atleast_2d(X)
@@ -521,7 +656,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def compute_beta_gamma(self):
         if self.estimate_trend:
             # estimate the trend coefficients
-            self.mean.beta = linalg.solve_triangular(self.G, self.Q.T.dot(self.Yt))
+            self.mean.beta = linalg.solve_triangular(self.G, my_dot(self.Q.T, self.Yt))
         self.gamma = linalg.solve_triangular(self.C.T, self.rho).reshape(-1, 1)
 
     def _compute_aux_var(self, R):
@@ -890,11 +1025,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                                            maxfun=eval_budget)
                 
                 # TODO: verify this rule to determine the marginal improvement 
-                diff = (llf_opt - llf_opt_) / max(abs(llf_opt_), abs(llf_opt), 1)
+                # diff = (llf_opt - llf_opt_) / max(abs(llf_opt_), abs(llf_opt), 1)
                 if iteration == 0:
                     param_opt = param_opt_
                     llf_opt = llf_opt_    
-                elif diff >= 1e7 * MACHINE_EPSILON:
+                # elif diff >= 1e7 * MACHINE_EPSILON:
+                elif llf_opt_ <= llf_opt:
                     param_opt, llf_opt = param_opt_, llf_opt_
                     wait_count = 0
                 else:

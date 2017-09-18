@@ -16,7 +16,6 @@ from sklearn.ensemble import RandomForestRegressor
 class Trend(object):
     pass
 
-
 class BasisExpansionTrend(Trend):
     def __init__(self, n_feature):
         """
@@ -55,7 +54,7 @@ class BasisExpansionTrend(Trend):
             raise Exception('x does not have the right size!')
         return X
 
-    def jacobian(self, X):
+    def Jacobian(self, X):
         raise NotImplementedError
 
     def __eq__(self, trend_b):
@@ -82,7 +81,7 @@ class constant_trend(BasisExpansionTrend):
         n_eval = X.shape[0]
         return ones((n_eval, 1))
 
-    def jacobian(self, X):
+    def Jacobian(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         return zeros((n_eval, self.n_feature, 1))
@@ -104,7 +103,7 @@ class linear_trend(BasisExpansionTrend):
         n_eval = X.shape[0]
         return c_[ones(n_eval), X]
 
-    def jacobian(self, X):
+    def Jacobian(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         __ = c_[zeros(self.n_feature), eye(self.n_feature)]
@@ -131,7 +130,7 @@ class quadratic_trend(BasisExpansionTrend):
             f = c_[f, X[:, k, np.newaxis] * X[:, k:]]
         return f
 
-    def jacobian(self, X):
+    def Jacobian(self, X):
         raise NotImplementedError
 
 

@@ -9,6 +9,7 @@ Created on Wed Dec 16 16:34:04 2015
 @author: wangronin
 """
 
+import warnings
 import numpy as np
 from numpy import dot, sqrt, array, zeros, ones, exp
 
@@ -19,10 +20,18 @@ from sklearn.gaussian_process import correlation_models as correlation
 from sklearn.utils.validation import check_is_fitted
 from sklearn.metrics.pairwise import manhattan_distances
 
-import warnings
+from .gpr import GaussianProcess
 
 MACHINE_EPSILON = np.finfo(np.double).eps
-from .gpr import GaussianProcess
+
+def my_dot(x, y):
+    n_row = x.shape[0]
+    n_col = y.shape[1]
+    res = np.zeros((n_row, n_col))
+    for i in range(n_row):
+        for j in range(n_col):
+            res[i, j] = np.sum(x[i, :] * y[:, j])
+    return res
 
 
 class GaussianProcess_extra(GaussianProcess):
@@ -38,9 +47,6 @@ class GaussianProcess_extra(GaussianProcess):
                  optimizer=optimizer, random_start=random_start, likelihood=likelihood,
                  nugget=nugget, nugget_estim=nugget_estim, wait_iter=wait_iter, 
                  eval_budget=eval_budget, random_state=random_state)
-
-        self.regr_type = regr
-        self.corr_type = corr
 
     def gradient(self, x):
         """
@@ -62,9 +68,8 @@ class GaussianProcess_extra(GaussianProcess):
             raise Exception('x must be a vector!')
 
         # trend and its Jacobian
-        f = self.regr.F(x).T
-        f_dx = self.regr_dx(x)
-#        f_dx = self.trend.dx(x)
+        f = self.mean.F(x)
+        f_dx = self.mean.Jacobian(x)
 
         # correlation and its Jacobian
         d = manhattan_distances(x, Y=self.X, sum_over_features=False)
@@ -72,7 +77,7 @@ class GaussianProcess_extra(GaussianProcess):
         r_dx = self.corr_dx(x, X=self.X, r=r)
 
         # gradient of the posterior mean
-        y_dx = dot(f_dx, self.beta) + dot(r_dx, self.gamma)
+        y_dx = dot(f_dx, self.beta) + my_dot(r_dx, self.gamma)
 
         # auxiliary variable: rt = C^-1 * r
         rt = solve_triangular(self.C, r.T, lower=True)
@@ -90,32 +95,6 @@ class GaussianProcess_extra(GaussianProcess):
         mse_dx = 2.0 * self.sigma2 * mse_dx
 
         return y_dx, mse_dx
-
-
-    def regr_dx(self, x):
-        """
-        Jacobian of the model base/regression function
-        """
-        # Check input shapes
-        x = np.atleast_2d(x)
-        n_eval, _ = x.shape
-        n_samples, n_features = self.X.shape
-
-        if _ != n_features:
-            raise Exception('x does not have the right size!')
-
-        if n_eval != 1:
-            raise Exception('x must be a vector!')
-
-        if self.regr_type == 'constant':
-            grad = zeros((n_features, 1))
-        elif self.regr_type == 'linear':
-            grad = np.c_[zeros(n_features), np.eye(n_features)]
-        elif self.regr_type == 'quadratic':
-            # TODO: to implement
-            pass
-
-        return grad
 
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
         # Check input shapes
@@ -318,14 +297,14 @@ class GaussianProcess_extra(GaussianProcess):
             # Get pairwise componentwise L1-distances to the input training set
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get regression function and correlation
-            f = self.regr.F(X)
+            f = self.mean.F(X)
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             if eval_cov:
                 R_cross = self.prior_cov_matrix(X, correlation=True)
 
             # Scaled predictor
-            y_ = np.dot(f, self.beta) + np.dot(r, self.gamma)
+            y_ = dot(f, self.beta) + my_dot(r, self.gamma)
 
             # Predictor
             y = (self.y_mean + self.y_std * y_).reshape(n_eval, n_targets)
@@ -353,7 +332,7 @@ class GaussianProcess_extra(GaussianProcess):
                 if self.beta0 is None:
                     # Universal Kriging
                     u = linalg.solve_triangular(self.G.T,
-                                                np.dot(self.Ft.T, rt) - f.T,
+                                                dot(self.Ft.T, rt) - f.T,
                                                 lower=True)
                 else:
                     # Ordinary Kriging
@@ -424,85 +403,85 @@ class GaussianProcess_extra(GaussianProcess):
                 return y
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    # diagostic plots of gradient field
-    def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', n_per_axis=200):
+#     # diagostic plots of gradient field
+#     def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', n_per_axis=200):
 
-        from numpy import linspace, meshgrid
-        import matplotlib.colors as colors
-        fig = ax.figure
+#         from numpy import linspace, meshgrid
+#         import matplotlib.colors as colors
+#         fig = ax.figure
 
-        x = linspace(x_lb[0], x_ub[0], n_per_axis)
-        y = linspace(x_lb[1], x_ub[1], n_per_axis)
-        X, Y = meshgrid(x, y)
+#         x = linspace(x_lb[0], x_ub[0], n_per_axis)
+#         y = linspace(x_lb[1], x_ub[1], n_per_axis)
+#         X, Y = meshgrid(x, y)
 
-        fitness = array([f(p) for p in np.c_[X.flatten(), Y.flatten()]]).reshape(-1, len(x))
-        ax.contour(X, Y, fitness, 25, colors='k', linewidths=1)
+#         fitness = array([f(p) for p in np.c_[X.flatten(), Y.flatten()]]).reshape(-1, len(x))
+#         ax.contour(X, Y, fitness, 25, colors='k', linewidths=1)
 
-        # calculate function gradients
-        x1 = linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
-        x2 = linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
-        X1, X2 = meshgrid(x1, x2)
+#         # calculate function gradients
+#         x1 = linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
+#         x2 = linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
+#         X1, X2 = meshgrid(x1, x2)
 
-        dx = array([grad(p).flatten() for p in np.c_[X1.flatten(), X2.flatten()]])
-        dx_norm = np.sqrt(np.sum(dx ** 2.0, axis=1))
-        dx /= dx_norm.reshape(-1, 1)
-        dx1 = dx[:, 0].reshape(-1, len(x1))
-        dx2 = dx[:, 1].reshape(-1, len(x1))
+#         dx = array([grad(p).flatten() for p in np.c_[X1.flatten(), X2.flatten()]])
+#         dx_norm = np.sqrt(np.sum(dx ** 2.0, axis=1))
+#         dx /= dx_norm.reshape(-1, 1)
+#         dx1 = dx[:, 0].reshape(-1, len(x1))
+#         dx2 = dx[:, 1].reshape(-1, len(x1))
 
-        CS = ax.quiver(X1, X2, dx1, dx2, dx_norm, cmap=plt.cm.gist_rainbow,
-                        norm=colors.LogNorm(vmin=dx_norm.min(), vmax=dx_norm.max()),
-                        headlength=5)
+#         CS = ax.quiver(X1, X2, dx1, dx2, dx_norm, cmap=plt.cm.gist_rainbow,
+#                         norm=colors.LogNorm(vmin=dx_norm.min(), vmax=dx_norm.max()),
+#                         headlength=5)
 
-        fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
+#         fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
 
-        ax.set_xlabel('$x_1$')
-        ax.set_ylabel('$x_2$')
-        ax.grid(True)
-        ax.set_title(title, y=1.05)
-        ax.set_xlim(x_lb[0], x_ub[0])
-        ax.set_ylim(x_lb[1], x_ub[1])
+#         ax.set_xlabel('$x_1$')
+#         ax.set_ylabel('$x_2$')
+#         ax.grid(True)
+#         ax.set_title(title, y=1.05)
+#         ax.set_xlim(x_lb[0], x_ub[0])
+#         ax.set_ylim(x_lb[1], x_ub[1])
 
-    import matplotlib.pyplot as plt
+#     import matplotlib.pyplot as plt
 
-    np.random.seed(100)
+#     np.random.seed(100)
 
-    fig_width = 22
-    fig_height = fig_width * 9 / 16
+#     fig_width = 22
+#     fig_height = fig_width * 9 / 16
 
-    n_sample = 10
-    X = np.random.rand(n_sample, 2) * n_sample - 5
-    y = np.sin(np.sum(X, axis=1) ** 2.0)
+#     n_sample = 10
+#     X = np.random.rand(n_sample, 2) * n_sample - 5
+#     y = np.sin(np.sum(X, axis=1) ** 2.0)
 
-    model = GaussianProcess_extra(corr='matern', theta0=[1e-1, 5*1e-1], normalize=False)
+#     model = GaussianProcess_extra(corr='matern', theta0=[1e-1, 5*1e-1], normalize=False)
 
-    model.fit(X, y)
+#     model.fit(X, y)
 
-    # To verify the corr gradient computation
-    x_lb = [-5, -5]
-    x_ub = [5, 5]
+#     # To verify the corr gradient computation
+#     x_lb = [-5, -5]
+#     x_ub = [5, 5]
 
-    # Plot EI and PI landscape
-    fig0, (ax0, ax1) = plt.subplots(1, 2, figsize=(fig_width, fig_height),
-                                    subplot_kw={'aspect':'equal'}, dpi=100)
-    fig0.subplots_adjust(left=0.03, bottom=0.01, right=0.97, top=0.99, wspace=0.08,
-                        hspace=0.1)
+#     # Plot EI and PI landscape
+#     fig0, (ax0, ax1) = plt.subplots(1, 2, figsize=(fig_width, fig_height),
+#                                     subplot_kw={'aspect':'equal'}, dpi=100)
+#     fig0.subplots_adjust(left=0.03, bottom=0.01, right=0.97, top=0.99, wspace=0.08,
+#                         hspace=0.1)
 
-    ax0.set_xlim([x_lb[0], x_ub[0]])
-    ax0.set_ylim([x_lb[1], x_ub[1]])
-    ax1.set_xlim([x_lb[0], x_ub[0]])
-    ax1.set_ylim([x_lb[1], x_ub[1]])
+#     ax0.set_xlim([x_lb[0], x_ub[0]])
+#     ax0.set_ylim([x_lb[1], x_ub[1]])
+#     ax1.set_xlim([x_lb[0], x_ub[0]])
+#     ax1.set_ylim([x_lb[1], x_ub[1]])
 
-    f = lambda x: model.predict(x)
-    grad = lambda x: model.gradient(x)[0]
+#     f = lambda x: model.predict(x)
+#     grad = lambda x: model.gradient(x)[0]
 
-    plot_contour_gradient(ax0, f, grad, x_lb, x_ub, title='', n_per_axis=200)
+#     plot_contour_gradient(ax0, f, grad, x_lb, x_ub, title='', n_per_axis=200)
 
-    f = lambda x: model.predict(x, eval_MSE=True)[1]
-    grad = lambda x: model.gradient(x)[1]
+#     f = lambda x: model.predict(x, eval_MSE=True)[1]
+#     grad = lambda x: model.gradient(x)[1]
 
-    plot_contour_gradient(ax1, f, grad, x_lb, x_ub, title='', n_per_axis=200)
+#     plot_contour_gradient(ax1, f, grad, x_lb, x_ub, title='', n_per_axis=200)
 
 
-    plt.show()
+#     plt.show()
