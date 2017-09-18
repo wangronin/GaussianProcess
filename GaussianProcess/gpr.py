@@ -10,7 +10,7 @@ import warnings
 
 import numpy as np
 from numpy.random import uniform
-from numpy import log, pi, log10
+from numpy import log, pi, log10, exp, dot
 
 from scipy import linalg
 from scipy.linalg import cho_solve
@@ -525,20 +525,20 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         r_dx = self.corr_dx(x, X=self.X, r=r)
 
         # gradient of the posterior mean
-        y_dx = dot(f_dx, self.beta) + my_dot(r_dx, self.gamma)
+        y_dx = dot(f_dx, self.mean.beta) + my_dot(r_dx, self.gamma)
 
         # auxiliary variable: rt = C^-1 * r
-        rt = solve_triangular(self.C, r.T, lower=True)
-        rt_dx = solve_triangular(self.C, r_dx.T, lower=True).T
+        rt = linalg.solve_triangular(self.C, r.T, lower=True)
+        rt_dx = linalg.solve_triangular(self.C, r_dx.T, lower=True).T
 
         # auxiliary variable: u = Ft^T * rt - f
         u = dot(self.Ft.T, rt) - f
         u_dx = dot(rt_dx, self.Ft) - f_dx
 
         mse_dx = -dot(rt_dx, rt)      # for Simple Kriging
-        if self.beta0 is None:        # for Universal Kriging
-            Ft2inv = inv(dot(self.Ft.T, self.Ft))
-            mse_dx += dot(u_dx, Ft2inv).dot(u)
+        if self.estimate_trend:       # Universal / Ordinary Kriging
+            Ft2inv = linalg.inv(dot(self.Ft.T, self.Ft))
+            mse_dx += dot(u_dx, Ft2inv).dot(u).reshape(n_features, n_eval)
 
         mse_dx = 2.0 * self.sigma2 * mse_dx
         return y_dx, mse_dx
