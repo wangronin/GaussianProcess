@@ -942,8 +942,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             elif name == 'alpha':
                 bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
             elif name == 'noise_var':
-                # TODO: implement this
-                pass
+                bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
         bounds = np.concatenate(bounds, axis=0)
         return bounds
         
@@ -964,12 +963,12 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         
         par_list = ['theta']
         par_len = [len(self.thetaL)]
-        if (self.estimation_mode == 'noiseless' and self.likelihood == 'restricted') or \
-            self.estimation_mode == 'noisy':
+        if self.likelihood == 'restricted' or self.estimation_mode == 'noisy':
             # TODO: implement optimization for the heterogenous case
             par_list += ['sigma2']
             par_len.append(1)
-        elif self.estimation_mode == 'noise_estim':
+        
+        if self.estimation_mode == 'noise_estim':
             if self.likelihood == 'concentrated':
                 par_list += ['alpha']
                 par_len.append(1)

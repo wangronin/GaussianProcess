@@ -41,7 +41,7 @@ def fitness(X):
 
 dim = 2
 n_init_sample = 500
-noise_var = 0
+noise_var = 0.1
 
 x_lb = np.array([-5] * dim)
 x_ub = np.array([5] * dim)
@@ -68,7 +68,7 @@ if 1 < 2:
                             thetaL=thetaL,
                             thetaU=thetaU,
                             nugget=None,
-                            noise_estim=False,
+                            noise_estim=True,
                             optimizer='BFGS',
                             verbose=True,
                             wait_iter=3,
