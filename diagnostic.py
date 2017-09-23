@@ -73,7 +73,7 @@ if 1 < 2:
                             verbose=True,
                             wait_iter=3,
                             random_start=30,
-                            likelihood='restricted',
+                            likelihood='concentrated',
                             eval_budget=1e3)
 
     # from GaussianProcess import OWCK

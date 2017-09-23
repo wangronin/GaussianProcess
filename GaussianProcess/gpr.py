@@ -10,7 +10,7 @@ import warnings
 
 import numpy as np
 from numpy.random import uniform
-from numpy import log, pi, log10, exp, dot
+from numpy import log, pi, log10, exp, dot, sqrt, array
 
 from scipy import linalg
 from scipy.linalg import cho_solve
@@ -265,7 +265,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.X, self.y = X, y
 
         # Run input checks
-        self._check_params(n_samples)
+        self._check_params()
 
         # Calculate matrix of distances D between samples
         D, ij = l1_cross_distances(X)
@@ -284,10 +284,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                                  "meanession model size p=%d.") % (n_samples, p))
             self.F = F
     
-    def sampling_prior(self, n=1):
+    def sampling_prior(self, X):
         pass
     
-    def sampling_posterior(self, n=1):
+    def sampling_posterior(self, X):
         pass
     
     def prior_cov(self, X1, X2=None, corr=False):
@@ -423,7 +423,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples_y, n_targets = self.y.shape
 
         # Run input checks
-        self._check_params(n_samples)
+        self._check_params()
 
         if X.shape[1] != n_features:
             raise ValueError(("The number of features in X (X.shape[1] = %d) "
@@ -542,8 +542,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         mse_dx = 2.0 * self.sigma2 * mse_dx
         return y_dx, mse_dx
-    
-    # TODOL corr_dx, corr_grad_theta should go to kernel package
+
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
         # Check input shapes
         x = np.atleast_2d(x)
@@ -684,6 +683,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     
     def log_likelihood_restricted(self, par, env=None, eval_grad=False):
         """
+        TODO: write this function in C or Cython
         The restricted log likelihood function
         It yields the unbiased estimation for the hyperparameters 
         """
@@ -942,6 +942,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             elif name == 'alpha':
                 bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
             elif name == 'noise_var':
+                # TODO: implement this
                 bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
         bounds = np.concatenate(bounds, axis=0)
         return bounds
@@ -1079,8 +1080,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         return param, optimal_llf_value, env
 
-    def _check_params(self, n_samples=None):
-
+    def _check_params(self):
         # Check correlation model
         if not callable(self.corr):
             if self.corr in self._correlation_types:

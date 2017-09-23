@@ -1,22 +1,129 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
 """
 Created on Wed Aug 23 15:48:28 2017
 
 @author: Hao Wang
 @email: wangronin@gmail.com
+Note: this module is strongly inspired by the kernel module of the sklearn GaussianProcess kernel implementation.
 """
 
+
+from abc import abstractmethod
 import numpy as np
 import math
 from scipy.special import kv, gamma
-
 
 """
 The built-in correlation models submodule for the gaussian_process module.
 TODO: The grad of the correlation should be implemented in the 
 correlation models
+
+TODO: by default, all the stationary kernels are normalized
 """
+
+class Kernel(object):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def __call__(self, X, Y=None):
+        "Evaluate the kernel function"
+    
+    def __add__(self, kernel):
+        return KernelSum(self, kernel)
+
+    def __mul__(self, kernel):
+        return KernelProduct(self, kernel)
+
+    def __rmul__(self, kernel):
+        return KernelProduct(self, kernel)
+
+class ConstantKernel(Kernel):
+    def __init__(self, sigma2=1.0):
+        self.sigma2 = sigma2
+    
+    def __call__(self, X, Y=None):
+        pass
+
+class CompositeKernel(Kernel):
+    """
+    The space of kernels is closed under addition and multiplication 
+    """
+    def __init__(self):
+        pass
+
+class KernelSum(CompositeKernel):
+    def __call__(self, X, Y=None):
+        return self.K1(X, Y) + self.K2(X, Y)
+
+class KernelProduct(CompositeKernel):
+    def __call__(self, X, Y=None):
+        return self.K1(X, Y) * self.K2(X, Y)
+
+class HammingKernel(Kernel):
+    """
+    Kernel function for categorical variables using Hamming distance
+    """
+    def __call__(self, X, Y=None):
+        if Y is None:
+            Y = X
+        
+class StationaryKernel(Kernel):
+    pass
+
+class Matern(StationaryKernel):
+    def __init__(self, theta=None, bounds=None, nu=1.5):
+        self.nu = nu
+        self.theta = theta
+        self.bounds = self.theta_bounds() if bounds else bounds
+    
+    def __call__(self, X):
+
+        theta = np.asarray(theta, dtype=np.float64)
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim > 1:
+            n_features = X.shape[1]
+        else:
+            n_features = 1
+
+        if theta.size == 1:
+            dists = np.sqrt(theta[0] * np.sum(X ** 2, axis=1))
+        else:
+            dists = np.sqrt(np.sum(theta.reshape(1, n_features) * X ** 2, axis=1))
+         # Matern 1/2
+        if nu == 0.5:
+            K = np.exp(-dists)
+        # Matern 3/2
+        elif nu == 1.5:
+
+            K = dists * math.sqrt(3)
+            K = (1. + K) * np.exp(-K)
+        # Matern 5/2
+        elif nu == 2.5:
+            K = dists * math.sqrt(5)
+            K = (1. + K + K ** 2 / 3.0) * np.exp(-K)
+        else:  # general case; expensive to evaluate
+            K = dists
+            K[K == 0.0] += np.finfo(float).eps  # strict zeros result in nan
+            tmp = (math.sqrt(2 * nu) * K)
+            K.fill((2 ** (1. - nu)) / gamma(nu))
+            K *= tmp ** nu
+            K *= kv(nu, tmp)
+    
+    def dx(self, X):
+       pass
+    
+    def dtheta(self, X):
+        c = np.sqrt(3)
+        D = np.sqrt(np.sum(theta * diff, axis=-1))
+
+        if nu == 0.5:
+            grad = - diff * theta / D * R
+        elif nu == 1.5:
+            grad = -3 * np.exp(-c * D)[..., np.newaxis] * diff / 2.
+        elif nu == 2.5:
+            pass
+
+
 
 def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
            length_scale_bounds=(1e-5, 1e5), nu=1.5):
@@ -105,13 +212,6 @@ def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
 #        else:
 #            return K, K_gradient
     return K
-
-def hamming(theta, d):
-    pass
-
-def mixed_integer(theta, d):
-    pass
-
 
 def absolute_exponential(theta, d):
     """

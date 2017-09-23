@@ -7,11 +7,11 @@ Created on Wed Aug 23 16:48:47 2017
 @email: wangronin@gmail.com
 """
 
+from abc import abstractmethod
 import numpy as np
 from numpy import newaxis, zeros, tile, eye, c_, ones, array, atleast_2d
 
 from sklearn.ensemble import RandomForestRegressor
-
 
 class Trend(object):
     pass
@@ -41,9 +41,14 @@ class BasisExpansionTrend(Trend):
         if self.beta is None:
             raise Exception('beta is not set!')
         return self.F(X).dot(self.beta)
-
+    
+    @abstractmethod
     def F(self, X):
-        raise NotImplementedError
+        "Evaluate the function basis as X"
+    
+    @abstractmethod
+    def Jacobian(self, X):
+        "Compute the Jacobian matrix of function basis"
 
     def check_input(self, X):
         # Check input shapes
@@ -54,15 +59,11 @@ class BasisExpansionTrend(Trend):
             raise Exception('x does not have the right size!')
         return X
 
-    def Jacobian(self, X):
-        raise NotImplementedError
-
     def __eq__(self, trend_b):
         pass
 
     def __add__(self, trend_b):
         pass
-
 
 class constant_trend(BasisExpansionTrend):
     """
@@ -86,7 +87,6 @@ class constant_trend(BasisExpansionTrend):
         n_eval = X.shape[0]
         return zeros((n_eval, self.n_feature, 1))
 
-
 class linear_trend(BasisExpansionTrend):
     """
     First order polynomial (linear, p = n+1) regression model.
@@ -108,7 +108,6 @@ class linear_trend(BasisExpansionTrend):
         n_eval = X.shape[0]
         __ = c_[zeros(self.n_feature), eye(self.n_feature)]
         return tile(__[newaxis, ...], (n_eval, 1, 1))
-
 
 class quadratic_trend(BasisExpansionTrend):
     """
@@ -133,7 +132,6 @@ class quadratic_trend(BasisExpansionTrend):
     def Jacobian(self, X):
         raise NotImplementedError
 
-
 class NonparametricTrend(Trend):
     def __init__(self, X, y):
         self.regr = RandomForestRegressor(20)
@@ -147,7 +145,7 @@ if __name__ == '__main__':
 
     X = np.random.randn(5, 2)
     print T(X)
-    print T.jacobian(X)
+    print T.Jacobian(X)
 
 
 # TODO: remove those functions
