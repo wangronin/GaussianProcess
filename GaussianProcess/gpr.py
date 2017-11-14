@@ -3,7 +3,7 @@
 # Author: Hao Wang 
 # Email: wangronin@gmail.com
 
-# from __future__ import print_function
+from __future__ import print_function
 
 import pdb
 import warnings 
@@ -350,7 +350,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if self.thetaL is not None and self.thetaU is not None:
             # Maximum Likelihood Estimation of the parameters
             if self.verbose:
-                print ("Maximum Likelihood Estimation of the hyperparameters...")
+                print("Maximum Likelihood Estimation of the hyperparameters...")
             self.par, self.log_likelihood_, env = self._optimize_hyperparameter()
             
             if np.isinf(self.log_likelihood_):
@@ -873,7 +873,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # for verificationn
         # TODO: remove this in the future
         if np.exp(log_likelihood) > 1:
-            warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
+#            warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
             return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
             
         if not eval_grad:
@@ -957,10 +957,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         """
 
         if self.verbose:
-            print "The chosen optimizer is: " + str(self.optimizer)
-            print 'Estimation mode: {}'.format(self.estimation_mode)
-            print 'Likelihood function: {}'.format(self.likelihood)
-            print "{} random restarts are specified.".format(self.random_start)
+            print("The chosen optimizer is: " + str(self.optimizer))
+            print('Estimation mode: {}'.format(self.estimation_mode))
+            print('Likelihood function: {}'.format(self.likelihood))
+            print("{} random restarts are specified.".format(self.random_start))
         
         par_list = ['theta']
         par_len = [len(self.thetaL)]
@@ -1037,8 +1037,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     wait_count += 1
 
                 if self.verbose:
-                    print 'restart {} takes {} evals'.format(iteration + 1, info['funcalls'])
-                    print 'best log likekihood value: {}'.format(-llf_opt)
+                    print('restart {} takes {} evals'.format(iteration + 1, info['funcalls']))
+                    print('best log likekihood value: {}'.format(-llf_opt))
                     if info["warnflag"] != 0:
                         warnings.warn("fmin_l_bfgs_b terminated abnormally with "
                                       "the state: {}".format(info))
@@ -1062,7 +1062,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             param_opt = param_opt.flatten()
             
             if self.verbose:
-                print '{} evals, best log likekihood value: {}'.format(evalcount, -llf_opt)
+                print('{} evals, best log likekihood value: {}'.format(evalcount, -llf_opt))
         
         optimal_param = 10. ** param_opt
         env = {}

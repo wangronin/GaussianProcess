@@ -3,11 +3,11 @@
 # Author: Hao Wang <wangronin@gmail.com>
 #         Bas van Stein <bas9112@gmail.com>
 
-
+from __future__ import print_function
 import numpy as np
 from numpy import array, ones, inner, dot, diag, size
 from numpy.random import shuffle
-from copy import deepcopy, copy
+from copy import deepcopy
 
 from multiprocessing import Pool
 
@@ -23,7 +23,7 @@ from .gprhao import GaussianProcess_extra
 
 
 def train_model( clus, model, training_set):
-    shape = np.array(training_set[0]).shape
+    # shape = np.array(training_set[0]).shape
     while True:  
         try:
             model = model.fit(*training_set)
@@ -149,7 +149,7 @@ class OWCK(GaussianProcess_extra):
             # clusters = np.unique(labels)
             # k = len(clusters)
             # if self.verbose:
-            #     print ("leafs:",k)
+            #     print(("leafs:",k))
             # self.n_cluster = k
             # self.leaf_labels = np.unique(labels)
             # self.cluster_label = labels
@@ -224,7 +224,7 @@ class OWCK(GaussianProcess_extra):
             elif (self.cluster_method=='tree'):
                 idx = [self.cluster_label == self.leaf_labels[i] for i in range(self.n_cluster)]
                 if (self.verbose):
-                    print "len cluster", len(idx)
+                    print("len cluster", len(idx))
             else:
                 targetMemberSize = (len(self.X) / self.n_cluster)*(1.0+self.overlap)
                 idx = []
@@ -249,7 +249,7 @@ class OWCK(GaussianProcess_extra):
             pool.join()
             self.models = models
             
-            #print models
+            #print(models)
             #
             '''
             raise Exception('Parallel mode has been disabled for now.')
@@ -266,7 +266,8 @@ class OWCK(GaussianProcess_extra):
             elif (self.cluster_method=='tree'):
                 idx = [self.cluster_label == self.leaf_labels[i] for i in range(self.n_cluster)]
                 if (verbose):
-                    print "len cluster",len(idx)
+                    print("len cluster",len(idx)
+)
             else:
                 targetMemberSize = (len(self.X) / self.n_cluster)*(1.0+self.overlap)
                 idx = []
@@ -345,7 +346,7 @@ class OWCK(GaussianProcess_extra):
                         # super is needed here to call the 'fit' function in the 
                         # parent class (GaussianProcess_extra)
                         if (self.cluster_method=='tree' and self.verbose):
-                            print 'leaf: ', self.leaf_labels[i]
+                            print('leaf: ', self.leaf_labels[i])
                         length_lb = 1e-10
                         length_ub = 1e2
                         X = self.X[idx, :]
@@ -356,10 +357,10 @@ class OWCK(GaussianProcess_extra):
                         model.fit(self.X[idx, :], self.y[idx])
                         break
                     except Exception as e:
-                        print e
+                        print(e)
                         if self.verbose:
-                            print('Current nugget setting is too small!' +\
-                                ' It will be tuned up automatically')
+                            print("Current nugget setting is too small!"
+                                  "It will be tuned up automatically")
                         #pdb.set_trace()
                         model.noise_var *= 10
     
@@ -383,7 +384,7 @@ class OWCK(GaussianProcess_extra):
         
         elif self.cluster_method in ['random', 'k-mean']:
             par = {}
-            _ = self.predict(x, eval_MSE=False, par_out=par)
+            # _ = self.predict(x, eval_MSE=False, par_out=par)
 
             weights = par['weights'].reshape(-1, 1)
             y = par['y'].reshape(-1, 1)
@@ -463,7 +464,7 @@ class OWCK(GaussianProcess_extra):
         Deprecated function, just call fit with new database.
         """
         newY = newY.reshape(-1, 1)
-        #print newY.shape, self.y.shape
+        #print(newY.shape, self.y.shape)
         X = np.r_[self.X, newX]
         y = np.r_[self.y, newY]
         self.fit(X, y)
@@ -521,7 +522,7 @@ class OWCK(GaussianProcess_extra):
                     #print(self.clusterer)
                 rebuildmodels = np.unique(self.clusterer.apply(newX))
                 rebuildmodelstemp = []
-                rebuild_index = 0;
+                # rebuild_index = 0
                 self.cluster_label = self.clusterer.apply(self.X)
                 new_leaf_labels = []
                 for i in rebuildmodels:
@@ -545,7 +546,7 @@ class OWCK(GaussianProcess_extra):
                                 new_leafindex = np.where(new_labels==n)[0][0]
                                 if self.verbose:
                                     print("New model with id",new_leafindex)
-                                    #print self.leaf_labels
+                                    #print(self.leaf_labels)
                                 new_model = deepcopy(self.empty_model)
                                 self.models.append(new_model)
                                 self.leaf_labels = np.append(self.leaf_labels,n)
@@ -557,7 +558,7 @@ class OWCK(GaussianProcess_extra):
                             #if self.verbose:
                                 #print("New tree")
                                 #print(self.clusterer)
-                                #print self.leaf_labels
+                                #print(self.leaf_labels)
                     else:
                         #just refit this model
                         #rebuildmodelstemp.append(leafindex)

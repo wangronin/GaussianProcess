@@ -144,8 +144,8 @@ if __name__ == '__main__':
     T = linear_trend(2, beta=(1, 2, 10))
 
     X = np.random.randn(5, 2)
-    print T(X)
-    print T.Jacobian(X)
+    print(T(X))
+    print(T.Jacobian(X))
 
 
 # TODO: remove those functions
