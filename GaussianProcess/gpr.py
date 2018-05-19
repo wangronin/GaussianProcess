@@ -503,7 +503,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         """
 
         check_is_fitted(self, 'X')
-
         # Check input shapes
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
@@ -516,32 +515,32 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             raise Exception('x must be a vector!')
 
         # trend and its Jacobian
-        f = self.mean.F(x)
+        f = self.mean.F(x).reshape(-1, 1)
         f_dx = self.mean.Jacobian(x)
-
+        
         # correlation and its Jacobian
         d = manhattan_distances(x, Y=self.X, sum_over_features=False)
         r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
-        r_dx = self.corr_dx(x, X=self.X, r=r)
-
+        r_dx = self.corr_dx(x, X=self.X, r=r).T
+        
         # gradient of the posterior mean
-        y_dx = dot(f_dx, self.mean.beta) + my_dot(r_dx, self.gamma)
+        y_dx = dot(self.mean.beta.T, f_dx) + my_dot(self.gamma.T, r_dx)
 
         # auxiliary variable: rt = C^-1 * r
         rt = linalg.solve_triangular(self.C, r.T, lower=True)
-        rt_dx = linalg.solve_triangular(self.C, r_dx.T, lower=True).T
+        rt_dx = linalg.solve_triangular(self.C, r_dx, lower=True)
 
         # auxiliary variable: u = Ft^T * rt - f
         u = dot(self.Ft.T, rt) - f
-        u_dx = dot(rt_dx, self.Ft) - f_dx
+        u_dx = dot(self.Ft.T, rt_dx) - f_dx
 
-        mse_dx = -dot(rt_dx, rt)      # for Simple Kriging
+        mse_dx = -dot(rt.T, rt_dx)      # for Simple Kriging
         if self.estimate_trend:       # Universal / Ordinary Kriging
             Ft2inv = linalg.inv(dot(self.Ft.T, self.Ft))
-            mse_dx += dot(u_dx, Ft2inv).dot(u).reshape(n_features, n_eval)
+            mse_dx += u.T.dot(Ft2inv).dot(u_dx)
 
         mse_dx = 2.0 * self.sigma2 * mse_dx
-        return y_dx, mse_dx
+        return y_dx.T, mse_dx.T
 
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
         # Check input shapes
@@ -872,7 +871,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # for verificationn
         # TODO: remove this in the future
-        if np.exp(log_likelihood) > 1:
+        if log_likelihood > 0:
 #            warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
             return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
             

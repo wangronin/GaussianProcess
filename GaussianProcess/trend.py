@@ -9,7 +9,7 @@ Created on Wed Aug 23 16:48:47 2017
 
 from abc import abstractmethod
 import numpy as np
-from numpy import newaxis, zeros, tile, eye, c_, ones, array, atleast_2d
+from numpy import newaxis, zeros, tile, eye, r_, c_, ones, array, atleast_2d
 
 from sklearn.ensemble import RandomForestRegressor
 
@@ -65,6 +65,7 @@ class BasisExpansionTrend(Trend):
     def __add__(self, trend_b):
         pass
 
+# TODO: change all Jacobian function to numerator layout
 class constant_trend(BasisExpansionTrend):
     """
     Zero order polynomial (constant, p = 1) regression model.
@@ -82,10 +83,9 @@ class constant_trend(BasisExpansionTrend):
         n_eval = X.shape[0]
         return ones((n_eval, 1))
 
-    def Jacobian(self, X):
-        X = self.check_input(X)
-        n_eval = X.shape[0]
-        return zeros((n_eval, self.n_feature, 1))
+    def Jacobian(self, x):
+        self.check_input(x)
+        return zeros((1, self.n_feature)) # numerator layout
 
 class linear_trend(BasisExpansionTrend):
     """
@@ -97,17 +97,17 @@ class linear_trend(BasisExpansionTrend):
         super(linear_trend, self).__init__(n_feature)
         self.n_dim = n_feature + 1
         self.set_beta(beta)
-
+    
+    # TODO: change this function name to __call__
     def F(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
         return c_[ones(n_eval), X]
 
-    def Jacobian(self, X):
-        X = self.check_input(X)
-        n_eval = X.shape[0]
-        __ = c_[zeros(self.n_feature), eye(self.n_feature)]
-        return tile(__[newaxis, ...], (n_eval, 1, 1))
+    def Jacobian(self, x):
+        x = self.check_input(x)
+        assert x.shape[0] == 1
+        return r_[zeros((1, self.n_feature)), eye(self.n_feature)]
 
 class quadratic_trend(BasisExpansionTrend):
     """

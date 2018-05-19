@@ -15,19 +15,36 @@ from GaussianProcess.utils import plot_contour_gradient
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern
 from sklearn.metrics import r2_score
+from InfillCriteria import EI
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
+from matplotlib import rcParams
+#from mpl_toolkits.mplot3d import axes3d
 
 from deap import benchmarks
 
 import numpy as np
 from numpy.random import randn
 
-np.random.seed(123)
+np.random.seed(666)
+
 plt.ioff()
-fig_width = 21.5
-fig_height = fig_width / 3.2
+#plt.style.use('ggplot')
+rcParams['legend.numpoints'] = 1
+rcParams['xtick.labelsize'] = 15
+rcParams['ytick.labelsize'] = 15
+rcParams['xtick.major.size'] = 10
+rcParams['xtick.major.width'] = 1
+rcParams['ytick.major.size'] = 10
+rcParams['ytick.major.width'] = 1
+rcParams['axes.labelsize'] = 13
+rcParams['font.size'] = 13
+rcParams['lines.markersize'] = 11
+rcParams['xtick.direction'] = 'out'
+rcParams['ytick.direction'] = 'out'
+
+fig_width = 10
+fig_height = fig_width / 1
 
 def fitness(X):
     # x1, x2 = X[:, 0], X[:, 1]
@@ -40,8 +57,8 @@ def fitness(X):
         + np.sqrt(noise_var) * randn(X.shape[0])
 
 dim = 2
-n_init_sample = 500
-noise_var = 0.1
+n_init_sample = 15
+noise_var = 0
 
 x_lb = np.array([-5] * dim)
 x_ub = np.array([5] * dim)
@@ -61,7 +78,7 @@ thetaU = 10 * (x_ub - x_lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 if 1 < 2:
-    mean = linear_trend(dim, beta=None)
+    mean = constant_trend(dim, beta=None)
     model = GaussianProcess(mean=mean,
                             corr='matern',
                             theta0=theta0,
@@ -72,9 +89,9 @@ if 1 < 2:
                             optimizer='BFGS',
                             verbose=True,
                             wait_iter=3,
-                            random_start=30,
+                            random_start=10,
                             likelihood='concentrated',
-                            eval_budget=1e3)
+                            eval_budget=50)
 
     # from GaussianProcess import OWCK
     # model = OWCK(corr='matern',
@@ -107,7 +124,15 @@ y_test = fitness(X_test)
 
 y_hat = model.predict(X_test)
 r2 = r2_score(y_test, y_hat)
+
 f = lambda x: model.predict(x)
+sd2 = lambda x: model.predict(x, eval_MSE=True)[1]
+
+ei = EI(model)
+ei_dx = lambda x: ei(x, dx=True)[1]
+
+f_dx = lambda x: model.gradient(x)[0]
+sd2_dx = lambda x: model.gradient(x)[1]
 
 print
 print 'R2:', r2
@@ -118,23 +143,36 @@ print 'Parameter optimization'
 print 'initial guess:', theta0
 print 'optimum:', model.theta_
 
-fig0, (ax0, ax1) = plt.subplots(1, 2, sharey=True, sharex=False,
+#fig0, (ax0, ax1, ax2) = plt.subplots(1, 3, sharey=True, sharex=False,
+#                                figsize=(fig_width, fig_height),
+#                                subplot_kw={'aspect': 'equal'}, dpi=100)
+fig0, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, sharey=True, sharex=True,
                                 figsize=(fig_width, fig_height),
-                                subplot_kw={'aspect': 'auto',
-                                            'projection': '3d'}, dpi=100)
+                                subplot_kw={'aspect': 'equal'}, dpi=100)
 
-plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Function',
-                      n_level=15, n_per_axis=100)
+plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Target function',
+                      n_level=15, n_per_axis=200)
 
-plot_contour_gradient(ax1, f, None, x_lb, x_ub, title='GPR model',
-                      n_level=15, n_per_axis=100)
+plot_contour_gradient(ax1, ei, ei_dx, x_lb, x_ub, title='log(Expected Improvement)', is_log=True,
+                      n_level=15, n_per_axis=150)
+
+plot_contour_gradient(ax2, f, f_dx, x_lb, x_ub, title='GPR prediction',
+                      n_level=15, n_per_axis=150)
+                      
+plot_contour_gradient(ax3, sd2, sd2_dx, x_lb, x_ub, title='log(GPR MSE)', is_log=True,
+                      n_level=15, n_per_axis=150)
 
 ax0.plot(X[:, 0], X[:, 1], ls='none', marker='.',
-         ms=10, mfc='k', mec='none', alpha=0.9)
+         ms=15, mfc='k', mec='none', alpha=0.8)
 
-for i, ax in enumerate((ax0, ax1)):
-    ax.set_xlim(x_lb[i], x_ub[i])
-    ax.set_xlim(x_lb[i], x_ub[i])
+ax0.set_ylabel('$x_2$')
+ax2.set_ylabel('$x_2$')
+ax2.set_xlabel('$x_1$')
+ax3.set_xlabel('$x_1$')
+
+for ax in (ax0, ax1, ax2, ax3):
+    ax.set_xlim(x_lb[0], x_ub[0])
+    ax.set_ylim(x_lb[1], x_ub[1])
 
 plt.tight_layout()
 plt.show()
