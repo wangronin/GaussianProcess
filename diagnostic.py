@@ -29,7 +29,7 @@ from numpy.random import randn
 np.random.seed(666)
 
 plt.ioff()
-#plt.style.use('ggplot')
+plt.style.use('ggplot')
 rcParams['legend.numpoints'] = 1
 rcParams['xtick.labelsize'] = 15
 rcParams['ytick.labelsize'] = 15
@@ -44,7 +44,7 @@ rcParams['xtick.direction'] = 'out'
 rcParams['ytick.direction'] = 'out'
 
 fig_width = 10
-fig_height = fig_width / 1
+fig_height = fig_width / 1.1
 
 def fitness(X):
     # x1, x2 = X[:, 0], X[:, 1]
@@ -134,21 +134,21 @@ ei_dx = lambda x: ei(x, dx=True)[1]
 f_dx = lambda x: model.gradient(x)[0]
 sd2_dx = lambda x: model.gradient(x)[1]
 
-print
-print 'R2:', r2
-print 'Homoscedastic noise variance:', noise_var
-print 'noise variance learned:', model.noise_var
-print
-print 'Parameter optimization'
-print 'initial guess:', theta0
-print 'optimum:', model.theta_
+print()
+print('R2:', r2)
+print('Homoscedastic noise variance:', noise_var)
+print('noise variance learned:', model.noise_var)
+print()
+print('Parameter optimization')
+print('initial guess:', theta0)
+print('optimum:', model.theta_)
 
 #fig0, (ax0, ax1, ax2) = plt.subplots(1, 3, sharey=True, sharex=False,
 #                                figsize=(fig_width, fig_height),
 #                                subplot_kw={'aspect': 'equal'}, dpi=100)
 fig0, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2, sharey=True, sharex=True,
-                                figsize=(fig_width, fig_height),
-                                subplot_kw={'aspect': 'equal'}, dpi=100)
+                                figsize=(fig_width, fig_height), dpi=100,
+                                subplot_kw={'aspect': 'equal'})
 
 plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Target function',
                       n_level=15, n_per_axis=200)

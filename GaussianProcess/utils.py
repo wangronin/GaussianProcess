@@ -76,10 +76,8 @@ def get_design_sites(dim, n_sample, x_lb, x_ub, sampling_method='lhs'):
     return samples
 
 # diagostic plots of gradient field
-# TODO: cleanup those functions
-def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', cmap=plt.cm.winter, 
-                          is_log=False, n_level=30, foo=0, 
-                          f_data=None, grad_data=None, n_per_axis=200):
+def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_level=30, foo=0,
+                         f_data=None, grad_data=None, n_per_axis=200):
    fig = ax.figure
 
    x = np.linspace(x_lb[0], x_ub[0], n_per_axis)
@@ -97,8 +95,8 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', cmap=plt.cm.winter
    if is_log:
        fitness = np.log(fitness)
        
-   CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.rainbow, linewidths=1)
-   plt.clabel(CS, inline=1, fontsize=12)
+   CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1)
+   plt.clabel(CS, inline=1, fontsize=10)
        
    if grad is not None:
        # calculate function gradients
@@ -116,15 +114,14 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', cmap=plt.cm.winter
        dx1 = dx[:, 0].reshape(-1, len(x1))
        dx2 = dx[:, 1].reshape(-1, len(x1))
        
-       CS = ax.quiver(X1, X2, dx1, dx2, color='k', alpha=0.8,
-                      # cmap=plt.cm.jet,
+       CS = ax.quiver(X1, X2, dx1, dx2, dx_norm, cmap=plt.cm.jet,
                       #norm=colors.LogNorm(vmin=1e-100, vmax=dx_norm.max()),
                       headlength=5)
 
 #        fig.colorbar(CS, ax=ax)
     
-#   ax.set_xlabel('$x_1$')
-#   ax.set_ylabel('$x_2$')
+   ax.set_xlabel('$x_1$')
+   ax.set_ylabel('$x_2$')
    ax.grid(True)
    ax.set_title(title)
    ax.set_xlim(x_lb[0], x_ub[0])

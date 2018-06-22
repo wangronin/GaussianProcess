@@ -23,9 +23,11 @@ from sklearn.utils.validation import check_is_fitted
 
 from .cma_es import cma_es
 from .kernel import absolute_exponential, squared_exponential, generalized_exponential, \
-    cubic, matern, pure_nugget
+    cubic, pure_nugget, matern
     
 from .trend import BasisExpansionTrend, NonparametricTrend
+
+# from libgpr import corr_grad_theta, matern
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -354,7 +356,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             self.par, self.log_likelihood_, env = self._optimize_hyperparameter()
             
             if np.isinf(self.log_likelihood_):
-                raise Exception("Bad parameter region. Try increasing upper bound")
+                # TODO: open design choice here:
+                #   1) leave this exception handeling part to the program calls gpr
+                #   2) handel it here and save the incident to a log
+                print('Doubling theta upper bound. Increasing nugget...')
+                self.thetaU *= 2
+                self.noise_var *= 10
+                self.par, self.log_likelihood_, env = self._optimize_hyperparameter()
+                # raise Exception("Bad parameter region. Try increasing upper bound")
 
         # find a better name for noise_var
         self.theta_ = self.par['theta']
@@ -444,7 +453,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
 
             # Predictor
-            y = (self.mean(X) + my_dot(r, self.gamma)).reshape(n_eval, n_targets)
+            # TODO: get rid of n_targets in this class
+            y = (self.mean(X) + my_dot(r, self.gamma)).reshape(n_eval, n_targets).ravel()
             
             # Mean Squared Error
             if eval_MSE:
@@ -464,7 +474,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 # Mean Squared Error might be slightly negative depending on
                 # machine precision: force to zero!
                 MSE[MSE < 0.] = 0.
-                # MSE = MSE.ravel()
+                MSE = MSE.ravel()
 
                 return y, MSE
             else:
@@ -530,18 +540,19 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         rt = linalg.solve_triangular(self.C, r.T, lower=True)
         rt_dx = linalg.solve_triangular(self.C, r_dx, lower=True)
 
-        # auxiliary variable: u = Ft^T * rt - f
-        u = dot(self.Ft.T, rt) - f
-        u_dx = dot(self.Ft.T, rt_dx) - f_dx
-
         mse_dx = -dot(rt.T, rt_dx)      # for Simple Kriging
         if self.estimate_trend:       # Universal / Ordinary Kriging
+            # auxiliary variable: u = Ft^T * rt - f
+            u = dot(self.Ft.T, rt) - f
+            u_dx = dot(self.Ft.T, rt_dx) - f_dx
             Ft2inv = linalg.inv(dot(self.Ft.T, self.Ft))
             mse_dx += u.T.dot(Ft2inv).dot(u_dx)
 
         mse_dx = 2.0 * self.sigma2 * mse_dx
         return y_dx.T, mse_dx.T
 
+    # TODO: move corr_dx, corr_grad_theta the kernel module
+    # TODO: rename corr_grad_theta to something else
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
         # Check input shapes
         x = np.atleast_2d(x)
@@ -603,6 +614,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         return grad
     
+    # def corr_grad_theta(self, theta, X, R, nu=1.5):
+        # return corr_grad_theta(theta, X, R, nu=1.5)
+    
     def corr_grad_theta(self, theta, X, R, nu=1.5):
         # Check input shapes
         X = np.atleast_2d(X)
@@ -643,7 +657,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         D = self.D
         ij = self.ij
         n_samples = self.X.shape[0]
-
+        
         # calculate the correlation matrix R
         r = self.corr(theta, D)
         R = np.eye(n_samples)
@@ -795,7 +809,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples, n_features = self.X.shape
         n_par = len(par)
         log_likelihood = -np.inf
-
         if self.estimation_mode == 'noiseless':
             theta = par
             noise_var = 0
@@ -872,7 +885,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # for verificationn
         # TODO: remove this in the future
         if log_likelihood > 0:
-#            warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
+            # warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
             return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
             
         if not eval_grad:
@@ -1001,6 +1014,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         
         def _obj_func(eval_grad=False):
             def func(log10param):
+                self.eval_count += 1
                 param = 10. ** np.array(log10param)
                 if self.likelihood == 'concentrated':
                     __ = self.log_likelihood_concentrated(param, eval_grad=eval_grad)
@@ -1009,6 +1023,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 return tuple(-_ for _ in tuple(__))
             return func
         
+        self.eval_count = 0
         # TODO: maybe adopt an ILS-like restarting heuristic?
         if self.optimizer == 'BFGS':            
             obj_func = _obj_func(eval_grad=True)
@@ -1041,7 +1056,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     if info["warnflag"] != 0:
                         warnings.warn("fmin_l_bfgs_b terminated abnormally with "
                                       "the state: {}".format(info))
-
+                                      
                 eval_budget -= info['funcalls']
                 if eval_budget <= 0 or wait_count >= self.wait_iter:
                     break
