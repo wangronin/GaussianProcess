@@ -39,13 +39,13 @@ class GaussianProcess_extra(GaussianProcess):
     def __init__(self, regr='constant', corr='squared_exponential',
                  beta0=None, verbose=False, theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
                  optimizer='BFGS', random_start=10, wait_iter=5, likelihood='restricted',
-                 eval_budget=None, nugget=10. * MACHINE_EPSILON, nugget_estim=False, 
+                 eval_budget=None, nugget=10. * MACHINE_EPSILON, noise_estim=False, 
                  random_state=None):
 
         super(GaussianProcess_extra, self).__init__(regr=regr, corr=corr, beta0=beta0,
                  verbose=verbose, theta0=theta0, thetaL=thetaL, thetaU=thetaU,
                  optimizer=optimizer, random_start=random_start, likelihood=likelihood,
-                 nugget=nugget, nugget_estim=nugget_estim, wait_iter=wait_iter, 
+                 nugget=nugget, noise_estim=noise_estim, wait_iter=wait_iter, 
                  eval_budget=eval_budget, random_state=random_state)
 
     def gradient(self, x):
@@ -54,7 +54,7 @@ class GaussianProcess_extra(GaussianProcess):
         Note that the nugget effect will not the change the computation below
         """
 
-        check_is_fitted(self, 'X')
+        # check_is_fitted(self, 'X')
 
         # Check input shapes
         x = np.atleast_2d(x)
@@ -265,7 +265,7 @@ class GaussianProcess_extra(GaussianProcess):
             An array with shape (n_eval, ) or (n_eval, n_targets) as with y,
             with the Mean Squared Error at x.
         """
-        check_is_fitted(self, "X")
+        # check_is_fitted(self, "X")
 
         # Check input shapes
         X = np.atleast_2d(X)
